@@ -1,0 +1,79 @@
+@import 'tailwindcss';
+@import '@proj-airi/font-departure-mono/index.css';
+
+/*
+  Departure Mono design system — dark-mode HUD palette
+  Source: ../departure-mono-design-system.json
+*/
+@theme {
+  --color-base: #1b1b1a;
+  --color-panel: #262421;
+  --color-elevated: #2e2b27;
+  --color-accent: #ff9142;
+  --color-text-primary: #eae7e1;
+  --color-text-muted: #8a8783;
+  --color-border: #4a4744;
+  --color-block: #6f6c68;
+
+  --font-sans: 'Departure Mono', 'IBM Plex Mono', 'Fragment Mono', monospace;
+  --font-mono: 'Departure Mono', 'IBM Plex Mono', 'Fragment Mono', monospace;
+
+  --radius-none: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-full: 0px;
+}
+
+:root {
+  color-scheme: dark;
+  --ds-base: #1b1b1a;
+  --ds-panel: #262421;
+  --ds-elevated: #2e2b27;
+  --ds-accent: #ff9142;
+  --ds-text-primary: #eae7e1;
+  --ds-text-muted: #8a8783;
+  --ds-border: #4a4744;
+  --ds-block: #6f6c68;
+  --ds-radius: 0px;
+  --ds-hairline: 1px;
+  --ds-tracking-micro: 0.15em;
+  --ds-leading-body: 1.4;
+}
+
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Departure Mono', 'IBM Plex Mono', 'Fragment Mono', monospace;
+  font-size: 15px;
+  line-height: var(--ds-leading-body);
+  background-color: var(--ds-base);
+  color: var(--ds-text-primary);
+  -webkit-font-smoothing: none;
+  text-rendering: optimizeSpeed;
+}
+
+::selection {
+  background: var(--ds-accent);
+  color: var(--ds-base);
+}
+
+:focus-visible {
+  outline: 1px solid var(--ds-accent);
+  outline-offset: 2px;
+}

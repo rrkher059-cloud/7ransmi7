@@ -1,0 +1,155 @@
+{
+  "meta": {
+    "name": "Departure Mono / Retro-Future Sci-Fi Technical Design System",
+    "genre": "Retro-futurist sci-fi instrumentation + technical-editorial + travel-document collage",
+    "primaryTypeface": "Departure Mono (monospaced, pixel/bitmap-grid font)",
+    "coreIdea": "A single monospaced pixel typeface applied uniformly across wildly different contexts (arcade game, spacecraft HUD, code terminal, type specimen, printed travel documents), unified by strict monochrome-plus-one-accent color rules, sharp corners, hairline rules, and dense micro-label annotation."
+  },
+
+  "typography": {
+    "typeface": {
+      "family": "Departure Mono",
+      "fallbackStack": ["Departure Mono", "IBM Plex Mono", "Fragment Mono", "monospace"],
+      "category": "monospaced, bitmap/pixel-grid construction",
+      "characterStyle": "visible stair-step pixel curves, fixed glyph width, low-res/8-bit feel",
+      "usageRule": "Used for 100% of text in every composition — headlines, labels, body, tables, code. No secondary typeface is ever introduced."
+    },
+    "caseConventions": {
+      "headlines": "UPPERCASE, wide tracking",
+      "microLabels/captions": "UPPERCASE, 10-12px, wide letter-spacing (~0.1-0.2em), placed directly above the element they describe",
+      "body copy": "sentence case, tight leading (~1.3-1.5)",
+      "data/tables": "sentence or upper case depending on field, strict column alignment"
+    },
+    "scale": [
+      {"role": "display/wordmark", "sizePx": "64-110", "case": "uppercase", "context": "landing page hero, logo lockup"},
+      {"role": "headline", "sizePx": "28-40", "case": "uppercase", "context": "type specimen headline, mission titles"},
+      {"role": "subheading", "sizePx": "18-22", "case": "sentence or upper", "context": "secondary specimen lines"},
+      {"role": "microLabel/caption", "sizePx": "10-12", "case": "uppercase", "letterSpacing": "wide", "context": "annotation tags above nearly every block/component"},
+      {"role": "body", "sizePx": "14-16", "context": "paragraph copy, letters, descriptions"},
+      {"role": "dataTable", "sizePx": "12-14", "context": "tabular numeric/text data, monospace alignment critical"}
+    ],
+    "specialTreatments": [
+      "Display wordmarks sometimes substitute numerals for visually similar letters (e.g., 7 for T, 3 for E) for a glitch/technical flavor.",
+      "Highlighted single characters (e.g., one letter in an alphabet grid) get an accent-color background block to demonstrate/showcase state."
+    ]
+  },
+
+  "colorPalettes": {
+    "darkMode": {
+      "background": {"base": "#1b1b1a", "panel": "#262421", "elevated": "#2e2b27"},
+      "accent": {"amber": "#ff9142", "usage": "single functional accent — active states, key data points, HUD lines, highlighted keywords, ball/paddle in game UI"},
+      "neutral": {"textPrimary": "#eae7e1", "textMuted": "#8a8783", "border": "#4a4744", "blockFill": "#6f6c68"},
+      "appliesTo": ["arcade/game screen", "terminal + code editor panels", "instrument/HUD dashboard", "font spec/glyph sheets", "keyboard layout diagrams"]
+    },
+    "lightMode": {
+      "background": {"base": "#ececea", "paper": "#ffffff", "kraft": "#cdbb9a"},
+      "accent": {"sage": "#b8c9ad", "usage": "ticket/boarding-pass accent panels, highlight-marker text overlays"},
+      "neutral": {"textPrimary": "#1a1a1a", "textMuted": "#6b6b6b", "border": "#c9c7c2"},
+      "appliesTo": ["type specimen pages", "printed letters/documents", "boarding passes, receipts, luggage tags", "data tables", "marketing/landing page body"]
+    },
+    "globalRules": [
+      "Exactly one accent color per composition — never mix amber and sage in the same screen.",
+      "Dark screens = near-black base + amber accent = 'instrument panel' feel.",
+      "Light screens = off-white/paper base + desaturated secondary (kraft tan or sage green) = 'printed ephemera' feel.",
+      "Color is always functional (status, emphasis, active/highlighted data), never purely decorative."
+    ]
+  },
+
+  "layoutPatterns": [
+    {
+      "pattern": "Full-bleed symmetric dark canvas",
+      "seenIn": ["arcade game screen", "HUD/instrument dashboard"],
+      "structure": "Centered focal graphic (brick formation / radar reticle) on vertical axis, small labeled stat readouts flanking left and right, footer logo lockup bottom-left, fine-print bottom-right."
+    },
+    {
+      "pattern": "Split panel: technical backdrop + floating paper card",
+      "seenIn": ["mission-report / terminal screen"],
+      "structure": "Dark code/terminal panel with syntax-highlighted keywords on the left; a lighter rectangular 'document' card overlaid on top with soft shadow, containing markdown-style headers and a bordered data table."
+    },
+    {
+      "pattern": "Quadrant spec-sheet grid",
+      "seenIn": ["font specification sheet"],
+      "structure": "Page divided into independent labeled data blocks (metrics table, keyboard-layout diagram, glyph-metrics diagram with measurement lines, full character grid) — each with its own micro-label caption."
+    },
+    {
+      "pattern": "Radial HUD composition",
+      "seenIn": ["instrument dashboard"],
+      "structure": "Central circular reticle/crosshair with dashed orbit rings; vertical tick-mark axis of numbers beside it; left/right vertical stacks of labeled percentage gauge bars; top-center title flanked by tick marks; small icon buttons along bottom."
+    },
+    {
+      "pattern": "Editorial type-specimen stack",
+      "seenIn": ["type specimen page"],
+      "structure": "Vertical rhythm of [micro-label caption] + [type sample] pairs at decreasing size, generous whitespace, strict left alignment, no visual dividers needed between sections."
+    },
+    {
+      "pattern": "Overlapping physical-paper collage",
+      "seenIn": ["boarding pass / receipt composition", "landing page hero collage"],
+      "structure": "2-4 rectangular 'documents' of differing paper colors (white thermal receipt, dark boarding pass, kraft evidence card) overlapped at slight offsets/rotation with soft drop shadows, perforated/dashed tear-edges on ticket-style pieces."
+    },
+    {
+      "pattern": "Bordered data table",
+      "seenIn": ["flight/kerning table"],
+      "structure": "Hairline horizontal rules between rows, monospace column alignment, header row same weight as body (no bold), small sort-direction arrow icon in one header cell, light line-art illustration anchoring the top of the page."
+    },
+    {
+      "pattern": "Landing-page hero + evidence-board collage",
+      "seenIn": ["full site screen"],
+      "structure": "Large pixel wordmark top-left with highlight block behind it, version tag beside it, uppercase nav links top-right with small leading icons; below, a loosely arranged mixed-media collage: business letter, kraft evidence card with QR code + paperclip, dark app-card mockups, dotted orbit line-art, dot-grid decorative pattern."
+    }
+  ],
+
+  "componentLibrary": {
+    "navLinks": "Text-only, uppercase, small leading icon (arrow/heart/chevron), no background fill.",
+    "badgesAndLockups": "Rectangular bordered box (often solid fill behind text) containing an uppercase wordmark or label — used for logos and status pills.",
+    "gauges/progressBars": "Horizontal bar, segmented or solid fill, numeric/percentage label right-aligned; repeated in vertical stacks for multi-stat readouts (fuel, pressure, etc).",
+    "tables": "1px hairline borders/rules only, no bold header differentiation, monospace numeric alignment, optional sort icon.",
+    "documentCards": "Rectangular 'paper' card, soft low-opacity drop shadow, optional 1-3° rotation, dashed/perforated edge when representing tickets or receipts.",
+    "annotationDots": "Small accent-colored dot markers paired with a coordinate/number micro-label — used on schematics, diagrams, and highlighted data.",
+    "dashedLines": "Used two ways: (1) perforation/tear lines on ticket-style cards, (2) orbital/trajectory paths in decorative line-art.",
+    "lineArtIllustrations": "Thin 1px monochrome technical/schematic drawings — blueprint circles, pen nibs, orbit paths, barcodes, QR codes — rendered in the muted neutral or accent color.",
+    "reticle/crosshair": "Circular radar-style target graphic with center dot and axis ticks, used in HUD contexts.",
+    "highlightMarker": "Flat accent-color rectangle behind a run of text, mimicking a highlighter pen, used in printed-letter mockups."
+  },
+
+  "motifsAndWorldbuilding": {
+    "fictionalUniverse": "A consistent retro-future space-travel/research world is used as placeholder content across all pieces rather than generic filler text: a fictional airline ('Kärmán Spacelines'), destinations ('Kuiper Alpha', 'Mars Landing', 'New Tokyo', 'Europa 1', 'Zvezda Moonbase'), research organizations ('Mercury Research Labs', a Farnsworth-named research institute), mission logs, boarding passes, and diner receipts.",
+    "visualReferences": [
+      "1980s-90s CRT terminal/command-line interfaces",
+      "retro sci-fi spacecraft instrument panels (amber monochrome HUDs)",
+      "8-bit/arcade game screens (Breakout-style block layouts)",
+      "physical travel ephemera — boarding passes, luggage tags, thermal receipts, typed business letters",
+      "type-foundry specimen/documentation sheets"
+    ],
+    "consistentDevices": [
+      "One monospace/pixel typeface for all text, no exceptions",
+      "Exactly one accent color per composition",
+      "Tiny uppercase micro-label captions attached to nearly every discrete element, functioning like technical spec annotations",
+      "Real-world document formats reproduced with authentic details (barcodes, QR codes, perforation, letterhead, itemized receipts)"
+    ]
+  },
+
+  "spacingAndGrid": {
+    "baseUnit": "8px",
+    "borderWeight": "1px hairline throughout; low-contrast gray in neutral contexts, accent color when indicating active/highlighted structure",
+    "cornerRadius": "0px — the entire system is sharp-cornered/rectangular; no rounded corners anywhere",
+    "whitespaceDensity": "generous/airy in light-mode editorial layouts; denser and more instrument-like in dark-mode HUD/game layouts"
+  },
+
+  "effectsAndTexture": {
+    "shadows": "Soft, low-opacity drop shadows reserved exclusively for elements meant to read as physical paper/cards stacked on a surface.",
+    "gradientsOrGlows": "None — all fields are flat color; no gradients, no blur/glow effects.",
+    "pixelation": "Typography (and some icon glyphs, e.g. the game's blocks) sits on a visible pixel grid; all other graphic elements (rules, tables, line-art, shadows) are rendered as clean vector shapes for contrast."
+  },
+
+  "aiReplicationGuidelines": [
+    "Set the base font-family to a monospaced/bitmap typeface (Departure Mono or a close substitute) for ALL text in the design — headlines, labels, body, and tables alike.",
+    "Choose exactly one mode per screen: dark-base + amber accent (technical/HUD/game contexts) OR light-base + neutral-with-one-secondary-accent (editorial/print/travel-document contexts). Never combine both accent colors in one composition.",
+    "Caption components with small (10-12px) uppercase, wide-tracked micro-labels placed directly above them — this is the system's signature 'technical documentation' texture.",
+    "Keep every corner at 0px radius. Use 1px hairline borders/rules for structure in flat UI; reserve soft drop shadows only for elements meant to look like loose physical paper.",
+    "For dashboard/HUD screens: build a symmetric layout anchored on a central circular reticle/gauge, flanked by vertical stacks of labeled percentage bars and a tick-marked numeric axis.",
+    "For document/collage layouts: overlap 2-4 rectangular 'paper' elements of different tones (white, dark, kraft, sage) at slight rotation/offset with soft shadows, as if scattered on a desk or evidence board.",
+    "Fill placeholder content with the established sci-fi travel/research fictional universe (spacelines, exoplanet destinations, mission logs, research institutes) instead of generic lorem ipsum, to preserve tone.",
+    "Use color strictly functionally: accent = active/highlighted/key data only. Everything else stays neutral gray/black/white.",
+    "Style tables with monospace column alignment, hairline row dividers, non-bold headers, and at most one small sort/direction icon — avoid heavy table chrome."
+  ]
+}

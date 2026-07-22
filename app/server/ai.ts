@@ -1,0 +1,446 @@
+import { TWEET_MAX_CHARS } from '../shared/constants.ts'
+import type { Tweet } from '../shared/schemas.ts'
+
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+const DEFAULT_MODEL = process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini'
+
+export type AssistMode =
+  | 'polished'
+  | 'concise'
+  | 'hashtags'
+  | 'summarize'
+
+export type ModerationResult = {
+  allowed: boolean
+  reason?: string
+  categories?: string[]
+}
+
+export type CompanionMessage = {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+}
+
+function getApiKey(): string | null {
+  const key = process.env.OPENROUTER_API_KEY?.trim()
+  return key && key.length > 0 ? key : null
+}
+
+export function isAiConfigured(): boolean {
+  return Boolean(getApiKey())
+}
+
+type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
+
+type OpenRouterChoice = {
+  message?: { content?: string | null }
+}
+
+type OpenRouterResponse = {
+  choices?: OpenRouterChoice[]
+  error?: { message?: string }
+}
+
+async function chatCompletion(
+  messages: ChatMessage[],
+  options?: { temperature?: number; maxTokens?: number },
+): Promise<string> {
+  const apiKey = getApiKey()
+  if (!apiKey) {
+    const err = new Error('AI is not configured. Set OPENROUTER_API_KEY.') as Error & {
+      status: number
+      code: string
+    }
+    err.status = 503
+    err.code = 'AI_NOT_CONFIGURED'
+    throw err
+  }
+
+  const response = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'http://localhost:5173',
+      'X-Title': '7RANSMI7',
+    },
+    body: JSON.stringify({
+      model: DEFAULT_MODEL,
+      messages,
+      temperature: options?.temperature ?? 0.4,
+      max_tokens: options?.maxTokens ?? 512,
+    }),
+  })
+
+  const raw = (await response.json()) as OpenRouterResponse
+  if (!response.ok) {
+    const message =
+      raw.error?.message ?? `OpenRouter request failed (${response.status}).`
+    const err = new Error(message) as Error & { status: number; code: string }
+    err.status = response.status >= 400 && response.status < 600 ? response.status : 502
+    err.code = 'AI_UPSTREAM_ERROR'
+    throw err
+  }
+
+  const content = raw.choices?.[0]?.message?.content?.trim()
+  if (!content) {
+    const err = new Error('AI returned an empty response.') as Error & {
+      status: number
+      code: string
+    }
+    err.status = 502
+    err.code = 'AI_EMPTY_RESPONSE'
+    throw err
+  }
+  return content
+}
+
+function extractJson<T>(text: string): T | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const candidate = (fenced?.[1] ?? text).trim()
+  try {
+    return JSON.parse(candidate) as T
+  } catch {
+    const start = candidate.indexOf('{')
+    const end = candidate.lastIndexOf('}')
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(candidate.slice(start, end + 1)) as T
+      } catch {
+        return null
+      }
+    }
+    const arrStart = candidate.indexOf('[')
+    const arrEnd = candidate.lastIndexOf(']')
+    if (arrStart >= 0 && arrEnd > arrStart) {
+      try {
+        return JSON.parse(candidate.slice(arrStart, arrEnd + 1)) as T
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+}
+
+function clampTweetText(text: string): string {
+  const trimmed = text.trim()
+  if (trimmed.length <= TWEET_MAX_CHARS) return trimmed
+  return trimmed.slice(0, TWEET_MAX_CHARS).trimEnd()
+}
+
+const ASSIST_PROMPTS: Record<AssistMode, string> = {
+  polished:
+    'Rewrite the draft so it is clearer, more polished, and professional while keeping the original meaning and voice. Return ONLY the rewritten text.',
+  concise:
+    'Rewrite the draft to be more concise and punchy. Keep the core meaning. Return ONLY the rewritten text.',
+  hashtags:
+    'Keep the original draft almost unchanged, but append 2–4 relevant hashtags at the end (space-separated, starting with #). Return ONLY the full post text.',
+  summarize:
+    'Summarize the draft into a short social post (1–2 sentences). Return ONLY the summary text.',
+}
+
+export async function assistCompose(
+  body: string,
+  mode: AssistMode,
+): Promise<string> {
+  const draft = body.trim()
+  if (!draft) {
+    const err = new Error('Add draft text before using AI assist.') as Error & {
+      status: number
+      code: string
+    }
+    err.status = 400
+    err.code = 'VALIDATION_ERROR'
+    throw err
+  }
+
+  const result = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `You are a writing assistant for a short-form social network (max ${TWEET_MAX_CHARS} chars). ${ASSIST_PROMPTS[mode]} Do not wrap the answer in quotes or markdown.`,
+      },
+      { role: 'user', content: draft },
+    ],
+    { temperature: 0.5, maxTokens: 400 },
+  )
+
+  return clampTweetText(result.replace(/^["']|["']$/g, ''))
+}
+
+export async function generateTags(body: string): Promise<string[]> {
+  const draft = body.trim()
+  if (!draft) return []
+
+  if (!isAiConfigured() || process.env.NODE_ENV === 'test') {
+    return fallbackTags(draft)
+  }
+
+  try {
+    const result = await chatCompletion(
+      [
+        {
+          role: 'system',
+          content:
+            'Generate 2–4 high-level topic tags for a social post. Return ONLY JSON: {"tags":["tag1","tag2"]}. Tags should be short lowercase words or kebab-case phrases without #.',
+        },
+        { role: 'user', content: draft },
+      ],
+      { temperature: 0.2, maxTokens: 120 },
+    )
+
+    const parsed = extractJson<{ tags?: unknown }>(result)
+    if (!parsed || !Array.isArray(parsed.tags)) {
+      return fallbackTags(draft)
+    }
+
+    return normalizeTags(parsed.tags)
+  } catch {
+    return fallbackTags(draft)
+  }
+}
+
+function normalizeTags(raw: unknown[]): string[] {
+  const tags: string[] = []
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const cleaned = item
+      .trim()
+      .toLowerCase()
+      .replace(/^#/, '')
+      .replace(/[^a-z0-9_\-\s]/g, '')
+      .replace(/\s+/g, '-')
+      .slice(0, 32)
+    if (cleaned && !tags.includes(cleaned)) tags.push(cleaned)
+    if (tags.length >= 4) break
+  }
+  return tags.slice(0, 4)
+}
+
+function fallbackTags(body: string): string[] {
+  const hashtags = body.match(/#[\p{L}\p{N}_]+/gu) ?? []
+  const fromHash = hashtags.map((t) => t.slice(1).toLowerCase())
+  if (fromHash.length >= 2) return normalizeTags(fromHash)
+
+  const words = body
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 4)
+  return normalizeTags(words.slice(0, 3))
+}
+
+/** Lightweight keyword gate + optional LLM classification. */
+export async function moderateContent(body: string): Promise<ModerationResult> {
+  const text = body.trim()
+  if (!text) return { allowed: true }
+
+  const lower = text.toLowerCase()
+  const spamPhrases =
+    /\b(buy now|click here|free money|crypto giveaway|viagra|casino bonus)\b/i
+  if (spamPhrases.test(text)) {
+    return {
+      allowed: false,
+      reason:
+        'This looks like spam or low-signal noise. Try a clearer transmission.',
+      categories: ['spam'],
+    }
+  }
+
+  if (/(https?:\/\/\S+\s*){4,}/i.test(text)) {
+    return {
+      allowed: false,
+      reason:
+        'This looks like spam or low-signal noise. Try a clearer transmission.',
+      categories: ['spam'],
+    }
+  }
+
+  // Flag walls of a single repeated character (bot noise), not normal drafts.
+  if (text.length >= 40) {
+    const unique = new Set(text.replace(/\s/g, '').toLowerCase())
+    if (unique.size <= 1) {
+      return {
+        allowed: false,
+        reason:
+          'This looks like spam or low-signal noise. Try a clearer transmission.',
+        categories: ['spam'],
+      }
+    }
+  }
+
+  if (!isAiConfigured() || process.env.NODE_ENV === 'test') {
+    if (/\b(kill yourself|kys)\b/i.test(lower)) {
+      return {
+        allowed: false,
+        reason: 'This transmission was blocked for harmful language.',
+        categories: ['toxicity'],
+      }
+    }
+    return { allowed: true }
+  }
+
+  try {
+    const result = await chatCompletion(
+      [
+        {
+          role: 'system',
+          content:
+            'You are a lightweight content moderator for a social network. Classify the post. Return ONLY JSON: {"allowed":true|false,"reason":"short helpful message if blocked","categories":["toxicity"|"spam"|"harassment"|"none"]}. Block only clear toxic/harassing/spam content. Allow edgy humor, criticism, and strong opinions.',
+        },
+        { role: 'user', content: text.slice(0, 1000) },
+      ],
+      { temperature: 0, maxTokens: 120 },
+    )
+
+    const parsed = extractJson<{
+      allowed?: boolean
+      reason?: string
+      categories?: string[]
+    }>(result)
+
+    if (!parsed || typeof parsed.allowed !== 'boolean') {
+      return { allowed: true }
+    }
+
+    if (parsed.allowed) return { allowed: true, categories: parsed.categories }
+
+    return {
+      allowed: false,
+      reason:
+        parsed.reason?.trim() ||
+        'This transmission was blocked by moderation. Soften the tone and try again.',
+      categories: parsed.categories,
+    }
+  } catch {
+    // Fail open on AI outages so posting still works; keyword gate already ran.
+    if (/\b(kill yourself|kys)\b/i.test(lower)) {
+      return {
+        allowed: false,
+        reason: 'This transmission was blocked for harmful language.',
+        categories: ['toxicity'],
+      }
+    }
+    return { allowed: true }
+  }
+}
+
+export async function semanticSearchTweets(
+  query: string,
+  tweets: Tweet[],
+): Promise<Tweet[]> {
+  const q = query.trim()
+  if (!q) return tweets.slice(0, 40)
+
+  const substringHits = tweets.filter((tweet) => {
+    const body = tweet.body.toLowerCase()
+    const handle = tweet.handle.toLowerCase()
+    const tags = (tweet.tags ?? []).join(' ').toLowerCase()
+    const needle = q.toLowerCase()
+    return (
+      body.includes(needle) ||
+      handle.includes(needle) ||
+      tags.includes(needle.replace(/^#/, '')) ||
+      body.includes(`#${needle.replace(/^#/, '')}`)
+    )
+  })
+
+  if (!isAiConfigured() || tweets.length === 0) {
+    return substringHits
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, 40)
+  }
+
+  const catalog = tweets.slice(0, 60).map((tweet) => ({
+    id: tweet.id,
+    handle: tweet.handle,
+    tags: tweet.tags ?? [],
+    body: tweet.body.slice(0, 180),
+  }))
+
+  try {
+    const result = await chatCompletion(
+      [
+        {
+          role: 'system',
+          content:
+            'You rank social posts for a natural-language search. Return ONLY JSON: {"ids":["uuid",...]}. Include posts that match the query by meaning, topic, or tags — not only exact words. Order by relevance. Return at most 20 ids from the provided catalog.',
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({ query: q, posts: catalog }),
+        },
+      ],
+      { temperature: 0.1, maxTokens: 400 },
+    )
+
+    const parsed = extractJson<{ ids?: unknown }>(result)
+    const ids = Array.isArray(parsed?.ids)
+      ? parsed.ids.filter((id): id is string => typeof id === 'string')
+      : []
+
+    const byId = new Map(tweets.map((t) => [t.id, t]))
+    const ranked: Tweet[] = []
+    for (const id of ids) {
+      const tweet = byId.get(id)
+      if (tweet) ranked.push(tweet)
+    }
+
+    // Merge substring hits that the model may have missed.
+    for (const hit of substringHits) {
+      if (!ranked.some((t) => t.id === hit.id)) ranked.push(hit)
+    }
+
+    return ranked.slice(0, 40)
+  } catch {
+    return substringHits
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, 40)
+  }
+}
+
+export async function companionReply(input: {
+  message: string
+  history?: CompanionMessage[]
+  feedContext?: { handle: string; body: string }[]
+}): Promise<string> {
+  const message = input.message.trim()
+  if (!message) {
+    const err = new Error('Ask a question first.') as Error & {
+      status: number
+      code: string
+    }
+    err.status = 400
+    err.code = 'VALIDATION_ERROR'
+    throw err
+  }
+
+  const feedBlock =
+    input.feedContext && input.feedContext.length > 0
+      ? input.feedContext
+          .slice(0, 12)
+          .map((p, i) => `${i + 1}. ${p.handle}: ${p.body.slice(0, 160)}`)
+          .join('\n')
+      : '(no live posts available)'
+
+  const history = (input.history ?? [])
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .slice(-8)
+    .map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content.slice(0, 800),
+    }))
+
+  return chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `You are the 7RANSMI7 onboard AI companion — a concise HUD-style assistant for a short-form social feed. Help with: summarizing top posts, answering questions about feed content, and light platform support (how to post, explore, follow, messages). Keep replies under 120 words unless asked for detail. Tone: clear, dry, mission-ops. Current feed snapshot:\n${feedBlock}`,
+      },
+      ...history,
+      { role: 'user', content: message.slice(0, 1000) },
+    ],
+    { temperature: 0.5, maxTokens: 350 },
+  )
+}

@@ -1,0 +1,10 @@
+---
+description: Rule for environment configuration, secrets, and deployment setup.
+alwaysApply: false
+---
+# Role: DevOps Engineer
+
+## Security & Infrastructure Guidelines:
+- Never hardcode API keys, passwords, or secrets directly in code files.
+- Always check that `.env` is listed in `.gitignore`.
+- Ensure build scripts compile with zero errors before pushing code to production.

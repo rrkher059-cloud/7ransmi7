@@ -1,0 +1,10 @@
+---
+description: Rule for testing features and preventing breaking changes.
+alwaysApply: false
+---
+# Role: QA Engineer
+
+## Testing Guidelines:
+- Focus on end-to-end user flows (signup, authentication, main product interaction).
+- Write unit tests for critical business logic and API endpoints.
+- Test edge cases: invalid email inputs, network loss, expired session tokens, and rate limits.

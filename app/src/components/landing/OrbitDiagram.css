@@ -1,0 +1,299 @@
+.orbit-diagram {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #262421;
+  border: 1px solid #4a4744;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  cursor: crosshair;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.orbit-diagram.is-hot {
+  border-color: rgba(255, 145, 66, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(255, 145, 66, 0.18);
+}
+
+.orbit-diagram.has-focus {
+  border-color: #ff9142;
+}
+
+.orbit-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.orbit-frame {
+  fill: #262421;
+  stroke: #4a4744;
+  stroke-width: 1;
+}
+
+.orbit-brackets path {
+  fill: none;
+  stroke: #ff9142;
+  stroke-width: 1.25;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  transition: stroke 180ms ease;
+}
+
+.orbit-diagram.is-hot .orbit-brackets path {
+  stroke: #ffb07a;
+}
+
+.orbit-crosshair line {
+  stroke: rgba(74, 71, 68, 0.85);
+  stroke-width: 1;
+}
+
+.orbit-ring-outer {
+  fill: none;
+  stroke: rgba(255, 145, 66, 0.55);
+  stroke-width: 1.25;
+}
+
+.orbit-ring-guide {
+  fill: none;
+  stroke: rgba(74, 71, 68, 0.55);
+  stroke-width: 1;
+}
+
+.orbit-tick {
+  stroke: rgba(138, 135, 131, 0.55);
+  stroke-width: 1;
+}
+
+.orbit-tick-major {
+  stroke: rgba(255, 145, 66, 0.7);
+  stroke-width: 1.25;
+}
+
+.orbit-track {
+  fill: none;
+  stroke: rgba(74, 71, 68, 0.75);
+  stroke-width: 1;
+  transition: stroke 160ms ease, stroke-width 160ms ease;
+}
+
+.orbit-track-accent {
+  stroke: rgba(255, 145, 66, 0.28);
+}
+
+.orbit-track.is-active {
+  stroke: rgba(255, 145, 66, 0.85);
+  stroke-width: 1.75;
+}
+
+.orbit-dash {
+  fill: none;
+  stroke: rgba(138, 135, 131, 0.55);
+  stroke-width: 1;
+}
+
+.orbit-dash-accent {
+  stroke: rgba(255, 145, 66, 0.55);
+}
+
+.orbit-sweep-beam {
+  stroke: rgba(255, 145, 66, 0.9);
+  stroke-width: 1.5;
+  stroke-linecap: square;
+  pointer-events: none;
+}
+
+.orbit-link {
+  stroke: rgba(255, 145, 66, 0.75);
+  stroke-width: 1.25;
+  stroke-dasharray: 4 4;
+  pointer-events: none;
+}
+
+.orbit-link-bead {
+  fill: #ff9142;
+  pointer-events: none;
+}
+
+.orbit-cursor-ring {
+  fill: none;
+  stroke: rgba(255, 145, 66, 0.85);
+  stroke-width: 1;
+}
+
+.orbit-cursor-cross {
+  stroke: rgba(255, 145, 66, 0.7);
+  stroke-width: 1;
+}
+
+.orbit-ripple {
+  fill: none;
+  stroke: #ff9142;
+  stroke-width: 1.25;
+  pointer-events: none;
+}
+
+.orbit-pulse {
+  fill: none;
+  stroke: rgba(255, 145, 66, 0.5);
+  stroke-width: 1;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: orbit-pulse 3.2s ease-out infinite;
+  pointer-events: none;
+}
+
+.orbit-pulse-delay {
+  animation-delay: 1.6s;
+}
+
+.orbit-core-ring {
+  fill: #1b1b1a;
+  stroke: #ff9142;
+  stroke-width: 1.5;
+  transition: stroke 160ms ease;
+}
+
+.orbit-diagram.has-focus .orbit-core-ring {
+  stroke: #ffb07a;
+}
+
+.orbit-core-plate {
+  fill: #1b1b1a;
+  stroke: #ff9142;
+  stroke-width: 1;
+}
+
+.orbit-core-label {
+  fill: #ff9142;
+  font-family: 'Departure Mono', 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.orbit-node {
+  cursor: pointer;
+}
+
+.orbit-node-hit {
+  fill: transparent;
+}
+
+.orbit-node-dot {
+  fill: #eae7e1;
+  stroke: #1b1b1a;
+  stroke-width: 1;
+  transition: fill 120ms ease;
+}
+
+.orbit-node.is-accent .orbit-node-dot,
+.orbit-node.is-focused .orbit-node-dot,
+.orbit-node.is-selected .orbit-node-dot {
+  fill: #ff9142;
+}
+
+.orbit-node-halo {
+  fill: none;
+  stroke: rgba(234, 231, 225, 0.28);
+  stroke-width: 1;
+  transition: stroke 120ms ease, r 120ms ease;
+}
+
+.orbit-node.is-focused .orbit-node-halo,
+.orbit-node.is-selected .orbit-node-halo {
+  stroke: rgba(255, 145, 66, 0.75);
+}
+
+.orbit-node-plate {
+  fill: rgba(27, 27, 26, 0.96);
+  stroke: #4a4744;
+  stroke-width: 1;
+  transition: stroke 120ms ease;
+}
+
+.orbit-node.is-focused .orbit-node-plate,
+.orbit-node.is-selected .orbit-node-plate {
+  stroke: #ff9142;
+}
+
+.orbit-node-label {
+  fill: #eae7e1;
+  font-family: 'Departure Mono', 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  pointer-events: none;
+}
+
+.orbit-node.is-focused .orbit-node-label,
+.orbit-node.is-selected .orbit-node-label,
+.orbit-node.is-accent .orbit-node-label {
+  fill: #ff9142;
+}
+
+.orbit-node-tag {
+  fill: #8a8783;
+  font-family: 'Departure Mono', 'IBM Plex Mono', monospace;
+  font-size: 7px;
+  letter-spacing: 0.16em;
+  pointer-events: none;
+}
+
+.orbit-node.is-focused .orbit-node-tag {
+  fill: #ff9142;
+}
+
+.orbit-meta {
+  fill: #8a8783;
+  font-family: 'Departure Mono', 'IBM Plex Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  pointer-events: none;
+}
+
+.orbit-meta-right {
+  text-anchor: end;
+}
+
+.orbit-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.55rem;
+  text-align: center;
+  font-family: 'Departure Mono', 'IBM Plex Mono', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a8783;
+  pointer-events: none;
+}
+
+.orbit-diagram.is-hot .orbit-hint {
+  color: #ff9142;
+}
+
+@keyframes orbit-pulse {
+  0% {
+    opacity: 0.65;
+    transform: scale(0.7);
+  }
+  70% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbit-pulse,
+  .orbit-pulse-delay {
+    animation: none !important;
+  }
+}

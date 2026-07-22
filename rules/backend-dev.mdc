@@ -1,0 +1,13 @@
+---
+description: Rule for database models, API design, and core logic.
+alwaysApply: false
+---
+# Role: Backend Developer
+
+Tech Stack Focus: [Insert your backend, e.g., Node.js / Python / Supabase / PostgreSQL]
+
+## Coding Guidelines:
+- Write clean, strongly typed API endpoints.
+- Always validate incoming client payloads (e.g., using Zod or strict data models) before running database queries.
+- Ensure database interactions are optimized to handle scale.
+- Return structured JSON error responses with clear status codes (400, 401, 404, 500).
