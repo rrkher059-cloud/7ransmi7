@@ -64,14 +64,14 @@ function apiFetch(input: string, init?: RequestInit): Promise<Response> {
 }
 
 export async function getMe(): Promise<PublicUser | null> {
-  const response = await apiFetch('/api/auth/me')
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/auth/me')
   if (response.status === 401) return null
   const data = await parseResponse<{ user: PublicUser }>(response)
   return data.user
 }
 
 export async function requestCode(email: string): Promise<void> {
-  const response = await apiFetch('/api/auth/request-code', {
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/auth/request-code', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ email }),
@@ -85,7 +85,7 @@ export async function signup(input: {
   password: string
   handle: string
 }): Promise<PublicUser> {
-  const response = await apiFetch('/api/auth/signup', {
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/auth/signup', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify(input),
@@ -98,7 +98,7 @@ export async function login(input: {
   email: string
   password: string
 }): Promise<PublicUser> {
-  const response = await apiFetch('/api/auth/login', {
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/auth/login', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify(input),
@@ -108,12 +108,12 @@ export async function login(input: {
 }
 
 export async function logout(): Promise<void> {
-  const response = await apiFetch('/api/auth/logout', { method: 'POST' })
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/auth/logout', { method: 'POST' })
   await parseResponse<{ ok: boolean }>(response)
 }
 
 export async function listTweets(): Promise<Tweet[]> {
-  const response = await apiFetch('/api/tweets')
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/tweets')
   const data = await parseResponse<{ tweets: Tweet[] }>(response)
   return data.tweets
 }
@@ -132,7 +132,7 @@ export async function postTweet(input: {
     })
   }
 
-  const response = await apiFetch('/api/tweets', {
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/tweets', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify(input),
@@ -223,7 +223,7 @@ export async function aiAssist(
   body: string,
   mode: AssistMode,
 ): Promise<string> {
-  const response = await apiFetch('/api/ai/assist', {
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/ai/assist', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ body, mode }),
@@ -233,7 +233,7 @@ export async function aiAssist(
 }
 
 export async function aiSemanticSearch(query: string): Promise<Tweet[]> {
-  const response = await apiFetch('/api/ai/search', {
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/ai/search', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ query }),
@@ -251,7 +251,7 @@ export async function aiCompanion(
   message: string,
   history?: CompanionChatMessage[],
 ): Promise<string> {
-  const response = await apiFetch('/api/ai/companion', {
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/ai/companion', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ message, history }),
@@ -261,7 +261,7 @@ export async function aiCompanion(
 }
 
 export async function aiStatus(): Promise<boolean> {
-  const response = await apiFetch('/api/ai/status')
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/ai/status')
   const data = await parseResponse<{ configured: boolean }>(response)
   return Boolean(data.configured)
 }
@@ -275,13 +275,13 @@ export async function searchUsers(query: string): Promise<PublicUser[]> {
 }
 
 export async function fetchTrending(): Promise<TrendingTopic[]> {
-  const response = await apiFetch('/api/explore/trending')
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/explore/trending')
   const data = await parseResponse<{ topics: TrendingTopic[] }>(response)
   return data.topics
 }
 
 export async function fetchSuggestions(): Promise<PublicUser[]> {
-  const response = await apiFetch('/api/explore/suggestions')
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/explore/suggestions')
   const data = await parseResponse<{ users: PublicUser[] }>(response)
   return data.users
 }
@@ -302,7 +302,7 @@ export type DmConversation = {
 }
 
 export async function listMessageConversations(): Promise<DmConversation[]> {
-  const response = await apiFetch('/api/messages')
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/messages')
   const data = await parseResponse<{ conversations: DmConversation[] }>(
     response,
   )
@@ -321,7 +321,7 @@ export async function sendDirectMessage(input: {
   toUserId: string
   body: string
 }): Promise<DmMessage> {
-  const response = await apiFetch('/api/messages', {
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/messages', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify(input),
@@ -384,7 +384,7 @@ export type AppNotification = {
 }
 
 export async function listNotifications(): Promise<AppNotification[]> {
-  const response = await apiFetch('/api/notifications')
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/notifications')
   const data = await parseResponse<{ notifications: AppNotification[] }>(
     response,
   )
@@ -392,7 +392,7 @@ export async function listNotifications(): Promise<AppNotification[]> {
 }
 
 export async function markNotificationsRead(): Promise<void> {
-  const response = await apiFetch('/api/notifications/read', { method: 'POST' })
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/notifications/read', { method: 'POST' })
   await parseResponse<{ ok: boolean }>(response)
 }
 
@@ -404,7 +404,7 @@ export type PlatformStats = {
 }
 
 export async function fetchPlatformStats(): Promise<PlatformStats> {
-  const response = await apiFetch('/api/stats')
+  const response = await apiFetch('https://sevenransmi7.onrender.com/api/stats')
   const data = await parseResponse<{ stats: PlatformStats }>(response)
   return data.stats
 }

@@ -4,17 +4,36 @@ import { cors } from 'hono/cors';
 
 const app = new Hono();
 
-app.use('*', cors());
+// Configure CORS explicitly for your GitHub Pages origin
+app.use('*', cors({
+  origin: ['https://rrkher059-cloud.github.io', 'http://localhost:5173'],
+  credentials: true,
+}));
 
-// Root route
+// Root health check
 app.get('/', (c) => c.text('Chirp API is live and running!'));
-
-// Health check endpoint
 app.get('/api/health', (c) => c.json({ status: 'ok' }));
 
-const port = Number(process.env.PORT) || 8787;
+// User auth check route
+app.get('/api/auth/me', (c) => {
+  return c.json({
+    id: '1',
+    username: 'rrkher059-cloud',
+    name: 'Developer',
+    avatar: '',
+    banner: ''
+  });
+});
 
-console.log(`Server starting on port ${port}...`);
+// App stats route
+app.get('/api/stats', (c) => {
+  return c.json({
+    users: 1,
+    posts: 0
+  });
+});
+
+const port = Number(process.env.PORT) || 8787;
 
 serve({
   fetch: app.fetch,
