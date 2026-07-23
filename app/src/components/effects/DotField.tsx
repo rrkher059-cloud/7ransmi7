@@ -124,10 +124,18 @@ const DotField = memo(function DotField({
       sizeRef.current = {
         w,
         h,
-        offsetX: rect.left + window.scrollX,
-        offsetY: rect.top + window.scrollY,
+        // Viewport-relative; parent may be position:fixed (landing / main layout).
+        offsetX: rect.left,
+        offsetY: rect.top,
       }
       buildDots(w, h)
+    }
+
+    function syncOffsets() {
+      if (!canvas?.parentElement) return
+      const rect = canvas.parentElement.getBoundingClientRect()
+      sizeRef.current.offsetX = rect.left
+      sizeRef.current.offsetY = rect.top
     }
 
     function buildDots(w: number, h: number) {
@@ -151,8 +159,10 @@ const DotField = memo(function DotField({
 
     function onMouseMove(e: MouseEvent) {
       const s = sizeRef.current
-      mouseRef.current.x = e.pageX - s.offsetX
-      mouseRef.current.y = e.pageY - s.offsetY
+      // clientX/Y match getBoundingClientRect (viewport space). pageX/Y break
+      // when the field is fixed and the document has scrolled.
+      mouseRef.current.x = e.clientX - s.offsetX
+      mouseRef.current.y = e.clientY - s.offsetY
     }
 
     function updateMouseSpeed() {
@@ -266,6 +276,7 @@ const DotField = memo(function DotField({
 
     doResize()
     window.addEventListener('resize', resize)
+    window.addEventListener('scroll', syncOffsets, { passive: true, capture: true })
     window.addEventListener('mousemove', onMouseMove, { passive: true })
 
     const prefersReduced =
@@ -308,6 +319,7 @@ const DotField = memo(function DotField({
       clearTimeout(resizeTimer)
       observer?.disconnect()
       window.removeEventListener('resize', resize)
+      window.removeEventListener('scroll', syncOffsets, true)
       window.removeEventListener('mousemove', onMouseMove)
     }
   }, [])

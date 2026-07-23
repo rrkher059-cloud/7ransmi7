@@ -196,14 +196,37 @@ function categorizeHashtag(tag: string): string {
   return 'General'
 }
 
+function normalizeTrendingTag(raw: string): string | null {
+  const cleaned = raw
+    .trim()
+    .toLowerCase()
+    .replace(/^#/, '')
+    .replace(/[^a-z0-9_\-]/g, '')
+    .slice(0, 32)
+  return cleaned ? `#${cleaned}` : null
+}
+
 export async function getTrendingTopics(limit = 8): Promise<TrendingTopic[]> {
   const tweets = await purgeExpired()
   const counts = new Map<string, number>()
 
   for (const tweet of tweets) {
-    const matches = tweet.body.match(/#[\p{L}\p{N}_]+/gu) ?? []
-    for (const raw of matches) {
-      const tag = raw.toLowerCase()
+    // Count unique tags per post so body #hashtags and AI `tags` both drive
+    // Explore trending without double-counting the same topic on one tweet.
+    const seen = new Set<string>()
+
+    const bodyMatches = tweet.body.match(/#[\p{L}\p{N}_-]+/gu) ?? []
+    for (const raw of bodyMatches) {
+      const tag = normalizeTrendingTag(raw)
+      if (tag) seen.add(tag)
+    }
+
+    for (const raw of tweet.tags ?? []) {
+      const tag = normalizeTrendingTag(raw)
+      if (tag) seen.add(tag)
+    }
+
+    for (const tag of seen) {
       counts.set(tag, (counts.get(tag) ?? 0) + 1)
     }
   }
