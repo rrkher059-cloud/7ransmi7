@@ -38,7 +38,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
         code: 'BAD_RESPONSE',
         message:
           response.status === 404
-            ? 'API route missing — restart npm run dev.'
+            ? 'API route missing (404). Check the Render API is up and API_BASE_URL points at https://sevenransmi7.onrender.com.'
             : `Request failed (${response.status}).`,
       },
     })
@@ -160,8 +160,10 @@ export async function healthCheck(): Promise<boolean> {
   try {
     const response = await apiFetch('/api/health')
     if (!response.ok) return false
-    const data = await parseResponse<{ ok?: boolean }>(response)
-    return Boolean(data.ok)
+    const data = await parseResponse<{ ok?: boolean; status?: string }>(
+      response,
+    )
+    return Boolean(data.ok) || data.status === 'ok'
   } catch {
     return false
   }

@@ -5,12 +5,18 @@ import path from 'node:path'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // GitHub Pages project site — keep in sync with package.json "homepage".
   base: '/7ransmi7/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@shared': path.resolve(__dirname, './shared'),
     },
+  },
+  build: {
+    // Single entry → one CSS file linked from index.html (no orphaned style chunks).
+    cssCodeSplit: false,
+    assetsDir: 'assets',
   },
   server: {
     proxy: {
@@ -19,5 +25,9 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  preview: {
+    // Match production path so `npm run preview` mirrors GitHub Pages.
+    port: 4173,
   },
 })
