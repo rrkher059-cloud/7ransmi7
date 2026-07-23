@@ -1,6 +1,10 @@
 import path from 'node:path'
 import { z } from 'zod'
-import { atomicWriteJson, DEFAULT_DATA_DIR, readJsonFile } from './jsonStore.ts'
+import {
+  DEFAULT_DATA_DIR,
+  mutateJsonFile,
+  readJsonFile,
+} from './jsonStore.ts'
 import { getPublicUser } from './users.ts'
 import type { PublicUser } from '../shared/schemas.ts'
 
@@ -31,12 +35,14 @@ function followsPath(): string {
 
 const emptyStore = (): FollowStore => ({ follows: [] })
 
+function parseStore(raw: unknown): FollowStore {
+  const parsed = followStoreSchema.safeParse(raw)
+  if (!parsed.success) throw new Error('Follows store is corrupt or invalid.')
+  return parsed.data
+}
+
 async function readStore(): Promise<FollowStore> {
-  return readJsonFile(followsPath(), emptyStore(), (raw) => {
-    const parsed = followStoreSchema.safeParse(raw)
-    if (!parsed.success) throw new Error('Follows store is corrupt or invalid.')
-    return parsed.data
-  })
+  return readJsonFile(followsPath(), emptyStore(), parseStore)
 }
 
 export async function getFollowStats(
@@ -125,30 +131,46 @@ export async function toggleFollow(
     throw error
   }
 
-  const store = await readStore()
-  const existingIndex = store.follows.findIndex(
-    (edge) =>
-      edge.followerId === followerId && edge.followingId === followingId,
-  )
+  return mutateJsonFile(followsPath(), emptyStore(), parseStore, (store) => {
+    const existingIndex = store.follows.findIndex(
+      (edge) =>
+        edge.followerId === followerId && edge.followingId === followingId,
+    )
 
-  let nextFollows: FollowEdge[]
-  let isFollowing: boolean
-  if (existingIndex >= 0) {
-    nextFollows = store.follows.filter((_, index) => index !== existingIndex)
-    isFollowing = false
-  } else {
-    nextFollows = [
-      ...store.follows,
-      {
-        followerId,
-        followingId,
-        createdAt: new Date().toISOString(),
+    let nextFollows: FollowEdge[]
+    let isFollowing: boolean
+    if (existingIndex >= 0) {
+      nextFollows = store.follows.filter((_, index) => index !== existingIndex)
+      isFollowing = false
+    } else {
+      nextFollows = [
+        ...store.follows,
+        {
+          followerId,
+          followingId,
+          createdAt: new Date().toISOString(),
+        },
+      ]
+      isFollowing = true
+    }
+
+    const followers = nextFollows.filter(
+      (edge) => edge.followingId === followingId,
+    ).length
+    const following = nextFollows.filter(
+      (edge) => edge.followerId === followingId,
+    ).length
+
+    return {
+      store: { follows: nextFollows },
+      result: {
+        isFollowing,
+        stats: {
+          followers,
+          following,
+          isFollowing,
+        },
       },
-    ]
-    isFollowing = true
-  }
-
-  await atomicWriteJson(followsPath(), { follows: nextFollows })
-  const stats = await getFollowStats(followingId, followerId)
-  return { isFollowing, stats }
+    }
+  })
 }

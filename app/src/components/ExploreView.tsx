@@ -6,6 +6,7 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { formatTimestamp } from '@/lib/format'
 import {
   ApiClientError,
+  fetchFollowStats,
   fetchSuggestions,
   fetchTrending,
   searchExplore,
@@ -21,6 +22,21 @@ type ExploreViewProps = {
   onOpenProfile?: (profile: ProfilePeek) => void
   onMessageUser?: (profile: ProfilePeek) => void
   onRequireAuth?: () => boolean
+}
+
+async function syncFollowState(users: PublicUser[]): Promise<Set<string>> {
+  const following = new Set<string>()
+  await Promise.all(
+    users.map(async (user) => {
+      try {
+        const stats = await fetchFollowStats(user.id)
+        if (stats.isFollowing) following.add(user.id)
+      } catch {
+        // leave unset
+      }
+    }),
+  )
+  return following
 }
 
 export function ExploreView({
@@ -52,10 +68,20 @@ export function ExploreView({
           fetchTrending(),
           fetchSuggestions(),
         ])
+        if (cancelled) return
+        setTopics(nextTopics)
+        setSuggestions(nextUsers)
+        setError(null)
+        const nextFollowing = await syncFollowState(nextUsers)
         if (!cancelled) {
-          setTopics(nextTopics)
-          setSuggestions(nextUsers)
-          setError(null)
+          setFollowing((current) => {
+            const merged = new Set(current)
+            for (const user of nextUsers) {
+              if (nextFollowing.has(user.id)) merged.add(user.id)
+              else merged.delete(user.id)
+            }
+            return merged
+          })
         }
       } catch (err) {
         if (!cancelled) {
@@ -77,8 +103,8 @@ export function ExploreView({
     if (!q) return []
     return localTweets.filter(
       (tweet) =>
-        tweet.body.toLowerCase().includes(q) ||
-        tweet.handle.toLowerCase().includes(q),
+        (tweet.body ?? '').toLowerCase().includes(q) ||
+        (tweet.handle ?? '').toLowerCase().includes(q),
     )
   }, [debounced, localTweets])
 
@@ -90,10 +116,22 @@ export function ExploreView({
         const { tweets, users } = await searchExplore(debounced, {
           semantic: Boolean(debounced),
         })
-        if (!cancelled) {
-          setResults(tweets)
-          setUserHits(users)
-          setError(null)
+        if (cancelled) return
+        setResults(tweets)
+        setUserHits(users)
+        setError(null)
+        if (users.length > 0) {
+          const nextFollowing = await syncFollowState(users)
+          if (!cancelled) {
+            setFollowing((current) => {
+              const merged = new Set(current)
+              for (const user of users) {
+                if (nextFollowing.has(user.id)) merged.add(user.id)
+                else merged.delete(user.id)
+              }
+              return merged
+            })
+          }
         }
       } catch (err) {
         if (!cancelled) {

@@ -1,12 +1,14 @@
+import { apiUrl } from '../config'
 import {
   TWEET_MAX_CHARS,
   REACTION_EMOJIS,
   type ApiErrorBody,
+  type PrivateUser,
   type PublicUser,
   type Tweet,
 } from '../../shared/schemas'
 
-export type { Tweet, PublicUser }
+export type { Tweet, PublicUser, PrivateUser }
 export { REACTION_EMOJIS }
 
 export class ApiClientError extends Error {
@@ -56,25 +58,149 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return body as T
 }
 
-function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  return fetch(input, {
+function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(apiUrl(path), {
     ...init,
     credentials: 'include',
   })
 }
 
-export async function getMe(): Promise<PublicUser | null> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/auth/me')
+function asNumber(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? n : 0
+}
+
+function normalizeTweet(raw: Partial<Tweet> | null | undefined): Tweet | null {
+  if (!raw || typeof raw !== 'object' || !raw.id) return null
+  const likedBy = Array.isArray(raw.likedBy)
+    ? raw.likedBy.map(String)
+    : []
+  return {
+    id: String(raw.id),
+    userId: raw.userId ? String(raw.userId) : undefined,
+    handle: String(raw.handle ?? 'unknown'),
+    body: String(raw.body ?? ''),
+    imageUrl: raw.imageUrl ?? null,
+    tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+    createdAt: String(raw.createdAt ?? new Date(0).toISOString()),
+    likes: asNumber(raw.likes),
+    liked: Boolean(raw.liked),
+    likedBy,
+    reactions: Array.isArray(raw.reactions) ? raw.reactions : [],
+    comments: Array.isArray(raw.comments) ? raw.comments : [],
+    replyToId: raw.replyToId ?? null,
+    repostOfId: raw.repostOfId ?? null,
+    repostOfHandle: raw.repostOfHandle ?? null,
+    repostCount: asNumber(raw.repostCount),
+    reposted: Boolean(raw.reposted),
+  }
+}
+
+function normalizeTweets(raw: unknown): Tweet[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((item) => normalizeTweet(item as Partial<Tweet>))
+    .filter((tweet): tweet is Tweet => tweet !== null)
+}
+
+function normalizeUser(raw: Partial<PublicUser> | null | undefined): PublicUser | null {
+  if (!raw || typeof raw !== 'object' || !raw.id) return null
+  return {
+    id: String(raw.id),
+    handle: String(raw.handle ?? 'unknown'),
+    createdAt: String(raw.createdAt ?? new Date(0).toISOString()),
+  }
+}
+
+function normalizePrivateUser(
+  raw: Partial<PrivateUser> | null | undefined,
+): PrivateUser | null {
+  const base = normalizeUser(raw)
+  if (!base) return null
+  const email =
+    raw && typeof raw === 'object' && typeof raw.email === 'string'
+      ? raw.email
+      : ''
+  return { ...base, email }
+}
+
+function normalizeMessage(
+  raw: Partial<DmMessage> | null | undefined,
+): DmMessage | null {
+  if (!raw || typeof raw !== 'object' || !raw.id) return null
+  return {
+    id: String(raw.id),
+    fromUserId: String(raw.fromUserId ?? ''),
+    toUserId: String(raw.toUserId ?? ''),
+    body: String(raw.body ?? ''),
+    createdAt: String(raw.createdAt ?? new Date(0).toISOString()),
+  }
+}
+
+function normalizeConversation(
+  raw: Partial<DmConversation> | null | undefined,
+): DmConversation | null {
+  if (!raw || typeof raw !== 'object') return null
+  const peer = normalizeUser(raw.peer as Partial<PublicUser> | undefined)
+  if (!peer) return null
+  const messages = Array.isArray(raw.messages)
+    ? raw.messages
+        .map((item) => normalizeMessage(item as Partial<DmMessage>))
+        .filter((msg): msg is DmMessage => msg !== null)
+    : []
+  return {
+    peer,
+    preview: String(raw.preview ?? ''),
+    updatedAt: String(raw.updatedAt ?? new Date(0).toISOString()),
+    messages,
+  }
+}
+
+export async function healthCheck(): Promise<boolean> {
+  try {
+    const response = await apiFetch('/api/health')
+    if (!response.ok) return false
+    const data = await parseResponse<{ ok?: boolean }>(response)
+    return Boolean(data.ok)
+  } catch {
+    return false
+  }
+}
+
+export async function getMe(): Promise<PrivateUser | null> {
+  const response = await apiFetch('/api/auth/me')
   if (response.status === 401) return null
-  const data = await parseResponse<{ user: PublicUser }>(response)
-  return data.user
+  const data = await parseResponse<{ user: PrivateUser }>(response)
+  return normalizePrivateUser(data.user)
 }
 
 export async function requestCode(email: string): Promise<void> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/auth/request-code', {
+  const response = await apiFetch('/api/auth/request-code', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ email }),
+  })
+  await parseResponse<{ ok: boolean }>(response)
+}
+
+export async function forgotPassword(email: string): Promise<void> {
+  const response = await apiFetch('/api/auth/forgot-password', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ email }),
+  })
+  await parseResponse<{ ok: boolean }>(response)
+}
+
+export async function resetPassword(input: {
+  email: string
+  code: string
+  password: string
+}): Promise<void> {
+  const response = await apiFetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
   })
   await parseResponse<{ ok: boolean }>(response)
 }
@@ -84,38 +210,65 @@ export async function signup(input: {
   code: string
   password: string
   handle: string
-}): Promise<PublicUser> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/auth/signup', {
+}): Promise<PrivateUser> {
+  const response = await apiFetch('/api/auth/signup', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify(input),
   })
-  const data = await parseResponse<{ user: PublicUser }>(response)
-  return data.user
+  const data = await parseResponse<{ user: PrivateUser }>(response)
+  const user = normalizePrivateUser(data.user)
+  if (!user) {
+    throw new ApiClientError(500, {
+      error: { code: 'BAD_USER', message: 'Invalid user payload from API.' },
+    })
+  }
+  return user
 }
 
 export async function login(input: {
   email: string
   password: string
-}): Promise<PublicUser> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/auth/login', {
+}): Promise<PrivateUser> {
+  const response = await apiFetch('/api/auth/login', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify(input),
   })
-  const data = await parseResponse<{ user: PublicUser }>(response)
-  return data.user
+  const data = await parseResponse<{ user: PrivateUser }>(response)
+  const user = normalizePrivateUser(data.user)
+  if (!user) {
+    throw new ApiClientError(500, {
+      error: { code: 'BAD_USER', message: 'Invalid user payload from API.' },
+    })
+  }
+  return user
 }
 
 export async function logout(): Promise<void> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/auth/logout', { method: 'POST' })
+  const response = await apiFetch('/api/auth/logout', { method: 'POST' })
   await parseResponse<{ ok: boolean }>(response)
 }
 
-export async function listTweets(): Promise<Tweet[]> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/tweets')
-  const data = await parseResponse<{ tweets: Tweet[] }>(response)
-  return data.tweets
+export async function listTweets(options?: {
+  limit?: number
+  cursor?: string
+}): Promise<{ tweets: Tweet[]; nextCursor: string | null }> {
+  const params = new URLSearchParams()
+  if (options?.limit != null) params.set('limit', String(options.limit))
+  if (options?.cursor) params.set('cursor', options.cursor)
+  const qs = params.toString()
+  const response = await apiFetch(qs ? `/api/tweets?${qs}` : '/api/tweets')
+  const data = await parseResponse<
+    { tweets?: Tweet[]; nextCursor?: string | null } | Tweet[]
+  >(response)
+  if (Array.isArray(data)) {
+    return { tweets: normalizeTweets(data), nextCursor: null }
+  }
+  return {
+    tweets: normalizeTweets(data.tweets),
+    nextCursor: data.nextCursor ?? null,
+  }
 }
 
 export async function postTweet(input: {
@@ -132,13 +285,19 @@ export async function postTweet(input: {
     })
   }
 
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/tweets', {
+  const response = await apiFetch('/api/tweets', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify(input),
   })
   const data = await parseResponse<{ tweet: Tweet }>(response)
-  return data.tweet
+  const tweet = normalizeTweet(data.tweet)
+  if (!tweet) {
+    throw new ApiClientError(500, {
+      error: { code: 'BAD_TWEET', message: 'Invalid tweet payload from API.' },
+    })
+  }
+  return tweet
 }
 
 export async function commentTweet(
@@ -151,7 +310,13 @@ export async function commentTweet(
     body: JSON.stringify({ body }),
   })
   const data = await parseResponse<{ tweet: Tweet }>(response)
-  return data.tweet
+  const tweet = normalizeTweet(data.tweet)
+  if (!tweet) {
+    throw new ApiClientError(500, {
+      error: { code: 'BAD_TWEET', message: 'Invalid tweet payload from API.' },
+    })
+  }
+  return tweet
 }
 
 export async function repostTweet(
@@ -160,7 +325,15 @@ export async function repostTweet(
   const response = await apiFetch(`/api/tweets/${tweetId}/repost`, {
     method: 'POST',
   })
-  return parseResponse<{ original: Tweet; repost: Tweet }>(response)
+  const data = await parseResponse<{ original: Tweet; repost: Tweet }>(response)
+  const original = normalizeTweet(data.original)
+  const repost = normalizeTweet(data.repost)
+  if (!original || !repost) {
+    throw new ApiClientError(500, {
+      error: { code: 'BAD_TWEET', message: 'Invalid repost payload from API.' },
+    })
+  }
+  return { original, repost }
 }
 
 export async function likeTweet(tweetId: string): Promise<Tweet> {
@@ -168,7 +341,13 @@ export async function likeTweet(tweetId: string): Promise<Tweet> {
     method: 'POST',
   })
   const data = await parseResponse<{ tweet: Tweet }>(response)
-  return data.tweet
+  const tweet = normalizeTweet(data.tweet)
+  if (!tweet) {
+    throw new ApiClientError(500, {
+      error: { code: 'BAD_TWEET', message: 'Invalid tweet payload from API.' },
+    })
+  }
+  return tweet
 }
 
 export async function reactToTweet(
@@ -181,7 +360,13 @@ export async function reactToTweet(
     body: JSON.stringify({ emoji }),
   })
   const data = await parseResponse<{ tweet: Tweet }>(response)
-  return data.tweet
+  const tweet = normalizeTweet(data.tweet)
+  if (!tweet) {
+    throw new ApiClientError(500, {
+      error: { code: 'BAD_TWEET', message: 'Invalid tweet payload from API.' },
+    })
+  }
+  return tweet
 }
 
 export async function deleteTweet(tweetId: string): Promise<void> {
@@ -206,13 +391,15 @@ export async function searchExplore(
   if (options?.semantic) params.set('semantic', '1')
   const response = await apiFetch(`/api/explore/search?${params.toString()}`)
   const data = await parseResponse<{
-    tweets: Tweet[]
+    tweets?: Tweet[]
     users?: PublicUser[]
     semantic?: boolean
   }>(response)
   return {
-    tweets: data.tweets,
-    users: data.users ?? [],
+    tweets: normalizeTweets(data.tweets),
+    users: (data.users ?? [])
+      .map((user) => normalizeUser(user))
+      .filter((user): user is PublicUser => user !== null),
     semantic: data.semantic,
   }
 }
@@ -223,23 +410,23 @@ export async function aiAssist(
   body: string,
   mode: AssistMode,
 ): Promise<string> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/ai/assist', {
+  const response = await apiFetch('/api/ai/assist', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ body, mode }),
   })
   const data = await parseResponse<{ text: string }>(response)
-  return data.text
+  return String(data.text ?? '')
 }
 
 export async function aiSemanticSearch(query: string): Promise<Tweet[]> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/ai/search', {
+  const response = await apiFetch('/api/ai/search', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ query }),
   })
-  const data = await parseResponse<{ tweets: Tweet[] }>(response)
-  return data.tweets
+  const data = await parseResponse<{ tweets?: Tweet[] }>(response)
+  return normalizeTweets(data.tweets)
 }
 
 export type CompanionChatMessage = {
@@ -251,39 +438,42 @@ export async function aiCompanion(
   message: string,
   history?: CompanionChatMessage[],
 ): Promise<string> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/ai/companion', {
+  const response = await apiFetch('/api/ai/companion', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ message, history }),
   })
   const data = await parseResponse<{ reply: string }>(response)
-  return data.reply
-}
-
-export async function aiStatus(): Promise<boolean> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/ai/status')
-  const data = await parseResponse<{ configured: boolean }>(response)
-  return Boolean(data.configured)
+  return String(data.reply ?? '')
 }
 
 export async function searchUsers(query: string): Promise<PublicUser[]> {
   const params = new URLSearchParams()
   if (query.trim()) params.set('q', query.trim())
   const response = await apiFetch(`/api/users/search?${params.toString()}`)
-  const data = await parseResponse<{ users: PublicUser[] }>(response)
-  return data.users
+  const data = await parseResponse<{ users?: PublicUser[] }>(response)
+  return (data.users ?? [])
+    .map((user) => normalizeUser(user))
+    .filter((user): user is PublicUser => user !== null)
 }
 
 export async function fetchTrending(): Promise<TrendingTopic[]> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/explore/trending')
-  const data = await parseResponse<{ topics: TrendingTopic[] }>(response)
-  return data.topics
+  const response = await apiFetch('/api/explore/trending')
+  const data = await parseResponse<{ topics?: TrendingTopic[] }>(response)
+  return (data.topics ?? []).map((topic) => ({
+    hashtag: String(topic?.hashtag ?? ''),
+    category: String(topic?.category ?? ''),
+    postCount: asNumber(topic?.postCount),
+  }))
 }
 
 export async function fetchSuggestions(): Promise<PublicUser[]> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/explore/suggestions')
-  const data = await parseResponse<{ users: PublicUser[] }>(response)
-  return data.users
+  const response = await apiFetch('/api/explore/suggestions')
+  if (response.status === 401) return []
+  const data = await parseResponse<{ users?: PublicUser[] }>(response)
+  return (data.users ?? [])
+    .map((user) => normalizeUser(user))
+    .filter((user): user is PublicUser => user !== null)
 }
 
 export type DmMessage = {
@@ -302,11 +492,13 @@ export type DmConversation = {
 }
 
 export async function listMessageConversations(): Promise<DmConversation[]> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/messages')
-  const data = await parseResponse<{ conversations: DmConversation[] }>(
+  const response = await apiFetch('/api/messages')
+  const data = await parseResponse<{ conversations?: DmConversation[] }>(
     response,
   )
-  return data.conversations
+  return (data.conversations ?? [])
+    .map((item) => normalizeConversation(item))
+    .filter((item): item is DmConversation => item !== null)
 }
 
 export async function getMessageThread(
@@ -314,20 +506,38 @@ export async function getMessageThread(
 ): Promise<DmConversation> {
   const response = await apiFetch(`/api/messages/${peerId}`)
   const data = await parseResponse<{ thread: DmConversation }>(response)
-  return data.thread
+  const thread = normalizeConversation(data.thread)
+  if (!thread) {
+    throw new ApiClientError(500, {
+      error: {
+        code: 'BAD_THREAD',
+        message: 'Invalid message thread payload from API.',
+      },
+    })
+  }
+  return thread
 }
 
 export async function sendDirectMessage(input: {
   toUserId: string
   body: string
 }): Promise<DmMessage> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/messages', {
+  const response = await apiFetch('/api/messages', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify(input),
   })
   const data = await parseResponse<{ message: DmMessage }>(response)
-  return data.message
+  const message = normalizeMessage(data.message)
+  if (!message) {
+    throw new ApiClientError(500, {
+      error: {
+        code: 'BAD_MESSAGE',
+        message: 'Invalid message payload from API.',
+      },
+    })
+  }
+  return message
 }
 
 export type FollowStats = {
@@ -340,20 +550,28 @@ export async function fetchFollowStats(
   userId: string,
 ): Promise<FollowStats> {
   const response = await apiFetch(`/api/users/${userId}/follow-stats`)
-  const data = await parseResponse<{ stats: FollowStats }>(response)
-  return data.stats
+  const data = await parseResponse<{ stats?: FollowStats }>(response)
+  return {
+    followers: asNumber(data.stats?.followers),
+    following: asNumber(data.stats?.following),
+    isFollowing: Boolean(data.stats?.isFollowing),
+  }
 }
 
 export async function fetchFollowers(userId: string): Promise<PublicUser[]> {
   const response = await apiFetch(`/api/users/${userId}/followers`)
-  const data = await parseResponse<{ users: PublicUser[] }>(response)
-  return data.users
+  const data = await parseResponse<{ users?: PublicUser[] }>(response)
+  return (data.users ?? [])
+    .map((user) => normalizeUser(user))
+    .filter((user): user is PublicUser => user !== null)
 }
 
 export async function fetchFollowing(userId: string): Promise<PublicUser[]> {
   const response = await apiFetch(`/api/users/${userId}/following`)
-  const data = await parseResponse<{ users: PublicUser[] }>(response)
-  return data.users
+  const data = await parseResponse<{ users?: PublicUser[] }>(response)
+  return (data.users ?? [])
+    .map((user) => normalizeUser(user))
+    .filter((user): user is PublicUser => user !== null)
 }
 
 export async function toggleFollowUser(
@@ -362,13 +580,34 @@ export async function toggleFollowUser(
   const response = await apiFetch(`/api/users/${userId}/follow`, {
     method: 'POST',
   })
-  return parseResponse<{ isFollowing: boolean; stats: FollowStats }>(response)
+  const data = await parseResponse<{
+    isFollowing?: boolean
+    stats?: FollowStats
+  }>(response)
+  return {
+    isFollowing: Boolean(data.isFollowing),
+    stats: {
+      followers: asNumber(data.stats?.followers),
+      following: asNumber(data.stats?.following),
+      isFollowing: Boolean(data.stats?.isFollowing ?? data.isFollowing),
+    },
+  }
+}
+
+export async function toggleBlockUser(
+  userId: string,
+): Promise<{ isBlocked: boolean }> {
+  const response = await apiFetch(`/api/users/${userId}/block`, {
+    method: 'POST',
+  })
+  const data = await parseResponse<{ isBlocked?: boolean }>(response)
+  return { isBlocked: Boolean(data.isBlocked) }
 }
 
 export async function fetchUserTweets(userId: string): Promise<Tweet[]> {
   const response = await apiFetch(`/api/users/${userId}/tweets`)
-  const data = await parseResponse<{ tweets: Tweet[] }>(response)
-  return data.tweets
+  const data = await parseResponse<{ tweets?: Tweet[] }>(response)
+  return normalizeTweets(data.tweets)
 }
 
 export type AppNotification = {
@@ -383,16 +622,39 @@ export type AppNotification = {
   read: boolean
 }
 
-export async function listNotifications(): Promise<AppNotification[]> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/notifications')
-  const data = await parseResponse<{ notifications: AppNotification[] }>(
-    response,
+export async function listNotifications(options?: {
+  limit?: number
+  cursor?: string
+}): Promise<{ notifications: AppNotification[]; nextCursor: string | null }> {
+  const params = new URLSearchParams()
+  if (options?.limit != null) params.set('limit', String(options.limit))
+  if (options?.cursor) params.set('cursor', options.cursor)
+  const qs = params.toString()
+  const response = await apiFetch(
+    qs ? `/api/notifications?${qs}` : '/api/notifications',
   )
-  return data.notifications
+  const data = await parseResponse<{
+    notifications?: AppNotification[]
+    nextCursor?: string | null
+  }>(response)
+  return {
+    notifications: (data.notifications ?? []).map((item) => ({
+      id: String(item?.id ?? ''),
+      recipientId: String(item?.recipientId ?? ''),
+      type: item?.type ?? 'like',
+      actorId: String(item?.actorId ?? ''),
+      actorHandle: String(item?.actorHandle ?? 'unknown'),
+      tweetId: item?.tweetId ?? null,
+      body: item?.body ?? null,
+      createdAt: String(item?.createdAt ?? new Date(0).toISOString()),
+      read: Boolean(item?.read),
+    })),
+    nextCursor: data.nextCursor ?? null,
+  }
 }
 
 export async function markNotificationsRead(): Promise<void> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/notifications/read', { method: 'POST' })
+  const response = await apiFetch('/api/notifications/read', { method: 'POST' })
   await parseResponse<{ ok: boolean }>(response)
 }
 
@@ -404,9 +666,15 @@ export type PlatformStats = {
 }
 
 export async function fetchPlatformStats(): Promise<PlatformStats> {
-  const response = await apiFetch('https://sevenransmi7.onrender.com/api/stats')
-  const data = await parseResponse<{ stats: PlatformStats }>(response)
-  return data.stats
+  const response = await apiFetch('/api/stats')
+  const data = await parseResponse<{ stats?: Partial<PlatformStats> }>(response)
+  return {
+    users: asNumber(data.stats?.users),
+    livePosts: asNumber(data.stats?.livePosts),
+    messageThreads: asNumber(data.stats?.messageThreads),
+    follows: asNumber(data.stats?.follows),
+  }
 }
 
+export { API_BASE_URL } from '../config'
 export { TWEET_MAX_CHARS }

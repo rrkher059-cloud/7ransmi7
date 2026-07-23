@@ -73,7 +73,7 @@ export default function LineSidebar({
   onItemClick,
   className = '',
 }: LineSidebarProps) {
-  const itemRefs = useRef<(HTMLLIElement | null)[]>([])
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const targetsRef = useRef<number[]>(items.map(() => 0))
   const currentRef = useRef<number[]>(items.map(() => 0))
   const rafRef = useRef<number | null>(null)
@@ -209,26 +209,28 @@ export default function LineSidebar({
         onPointerLeave={handlePointerLeave}
       >
         {items.map((label, index) => (
-          <li
-            key={`${label}-${index}`}
-            ref={(el) => {
-              itemRefs.current[index] = el
-            }}
-            className="line-sidebar__item"
-            aria-current={activeIndex === index ? 'true' : undefined}
-            onClick={() => handleClick(index, label)}
-          >
-            {showMarker ? (
-              <span className="line-sidebar__marker" aria-hidden="true" />
-            ) : null}
-            <span className="line-sidebar__label">
-              {showIndex ? (
-                <span className="line-sidebar__index">
-                  {String(index + 1).padStart(2, '0')}
-                </span>
+          <li key={`${label}-${index}`} className="line-sidebar__item-wrap">
+            <button
+              type="button"
+              ref={(el) => {
+                itemRefs.current[index] = el
+              }}
+              className="line-sidebar__item"
+              aria-current={activeIndex === index ? 'true' : undefined}
+              onClick={() => handleClick(index, label)}
+            >
+              {showMarker ? (
+                <span className="line-sidebar__marker" aria-hidden="true" />
               ) : null}
-              <span className="line-sidebar__text">{label}</span>
-            </span>
+              <span className="line-sidebar__label">
+                {showIndex ? (
+                  <span className="line-sidebar__index">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                ) : null}
+                <span className="line-sidebar__text">{label}</span>
+              </span>
+            </button>
           </li>
         ))}
       </ul>

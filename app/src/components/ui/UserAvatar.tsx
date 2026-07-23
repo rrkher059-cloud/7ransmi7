@@ -39,7 +39,8 @@ export function UserAvatar({
     }
   }, [userId])
 
-  const initial = handle.replace('@', '').slice(0, 1).toUpperCase() || '?'
+  const initial =
+    (handle ?? '').replace('@', '').slice(0, 1).toUpperCase() || '?'
 
   const inner = avatarUrl ? (
     <img
@@ -79,11 +80,5 @@ export function UserAvatar({
     <div className={sharedClass} style={sharedStyle} aria-hidden>
       {inner}
     </div>
-  )
-}
-
-export function notifyProfileMediaChanged(userId: string): void {
-  window.dispatchEvent(
-    new CustomEvent(MEDIA_EVENT, { detail: { userId } }),
   )
 }

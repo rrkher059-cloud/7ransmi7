@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { createTweetSchema, TWEET_MAX_CHARS } from './schemas.ts'
+import {
+  createTweetSchema,
+  publicUserSchema,
+  privateUserSchema,
+  signupSchema,
+  TWEET_MAX_CHARS,
+} from './schemas.ts'
 
 describe('createTweetSchema — empty posts', () => {
   it('rejects an empty body without an image', () => {
@@ -24,6 +30,14 @@ describe('createTweetSchema — empty posts', () => {
     })
     expect(result.success).toBe(true)
   })
+
+  it('rejects svg data URLs', () => {
+    const result = createTweetSchema.safeParse({
+      body: '',
+      imageUrl: 'data:image/svg+xml;base64,abc',
+    })
+    expect(result.success).toBe(false)
+  })
 })
 
 describe('createTweetSchema — character limit overflows', () => {
@@ -44,5 +58,39 @@ describe('createTweetSchema — character limit overflows', () => {
         new RegExp(String(TWEET_MAX_CHARS)),
       )
     }
+  })
+})
+
+describe('user schemas', () => {
+  it('public user omits email', () => {
+    const result = publicUserSchema.safeParse({
+      id: '11111111-1111-4111-8111-111111111111',
+      handle: '@ops',
+      createdAt: new Date().toISOString(),
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect('email' in result.data).toBe(false)
+    }
+  })
+
+  it('private user includes email', () => {
+    const result = privateUserSchema.safeParse({
+      id: '11111111-1111-4111-8111-111111111111',
+      email: 'ops@kuiper.test',
+      handle: '@ops',
+      createdAt: new Date().toISOString(),
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects common passwords on signup', () => {
+    const result = signupSchema.safeParse({
+      email: 'a@b.co',
+      code: '123456',
+      password: 'password',
+      handle: 'ops',
+    })
+    expect(result.success).toBe(false)
   })
 })

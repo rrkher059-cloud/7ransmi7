@@ -2,13 +2,17 @@ import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { cors } from 'hono/cors'
-import { ZodError } from 'zod'
+import { bodyLimit } from 'hono/body-limit'
+import { secureHeaders } from 'hono/secure-headers'
+import { ZodError, z } from 'zod'
 import { OTP_LENGTH } from '../shared/constants.ts'
 import {
   createTweetSchema,
   commentTweetSchema,
   likeTweetSchema,
   loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
   reactTweetSchema,
   requestCodeSchema,
   sendMessageSchema,
@@ -17,7 +21,8 @@ import {
   aiCompanionSchema,
   aiSearchSchema,
   type ApiErrorBody,
-  type PublicUser,
+  type PrivateUser,
+  type Tweet,
 } from '../shared/schemas.ts'
 import {
   assistCompose,
@@ -27,8 +32,9 @@ import {
   moderateContent,
   semanticSearchTweets,
 } from './ai.ts'
-import { checkRateLimit } from './rateLimit.ts'
+import { enforceRateLimit } from './rateLimit.ts'
 import { generateOtpCode } from './crypto.ts'
+import { toggleBlock } from './blocks.ts'
 import {
   getFollowStats,
   listFollowers,
@@ -45,6 +51,7 @@ import { getPlatformStats } from './stats.ts'
 import { consumeOtp, upsertOtp } from './otps.ts'
 import {
   SESSION_COOKIE,
+  sessionCookieClearOptions,
   sessionCookieOptions,
   signSession,
   verifySession,
@@ -72,13 +79,14 @@ import {
   authenticateUser,
   createUser,
   findUserByEmail,
-  getPublicUser,
+  getPrivateUser,
   listPublicUsers,
   searchUsers,
+  updatePassword,
 } from './users.ts'
 
 type AppVariables = {
-  user: PublicUser
+  user: PrivateUser
 }
 
 function errorBody(
@@ -99,46 +107,173 @@ function statusError(
   )
 }
 
-async function currentUser(c: Context): Promise<PublicUser | null> {
+async function currentUser(c: Context): Promise<PrivateUser | null> {
   const token = getCookie(c, SESSION_COOKIE)
   const session = verifySession(token)
   if (!session) return null
-  return getPublicUser(session.userId)
+  return getPrivateUser(session.userId)
 }
 
+function trustProxy(): boolean {
+  return process.env.TRUST_PROXY === 'true' || Boolean(process.env.RENDER)
+}
+
+/**
+ * Client identity for rate limiting.
+ * Only trust X-Forwarded-For / X-Real-IP when TRUST_PROXY=true or RENDER is set.
+ * Otherwise bucket everyone as 'direct' (safer than spoofable headers).
+ */
 function clientKey(c: Context): string {
+  if (!trustProxy()) return 'direct'
   const forwarded = c.req.header('x-forwarded-for')
   if (forwarded) return forwarded.split(',')[0]?.trim() || 'unknown'
-  return c.req.header('x-real-ip') ?? 'local'
+  return c.req.header('x-real-ip') ?? 'unknown'
+}
+
+function allowedOrigins(): string[] {
+  const raw = process.env.ALLOWED_ORIGINS?.trim()
+  if (raw) {
+    return raw
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  }
+  return [
+    'https://rrkher059-cloud.github.io',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ]
+}
+
+function originHost(value: string): string | null {
+  try {
+    return new URL(value).host.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+function isAllowedBrowserOrigin(originOrReferer: string): boolean {
+  const host = originHost(originOrReferer)
+  if (!host) return false
+  return allowedOrigins().some((allowed) => {
+    const allowedHost = originHost(allowed)
+    return allowedHost !== null && allowedHost === host
+  })
+}
+
+function parseLimit(
+  raw: string | undefined,
+  defaultLimit: number,
+  max = 100,
+): number {
+  if (!raw) return defaultLimit
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 1) return defaultLimit
+  return Math.min(n, max)
+}
+
+function paginateByCursor<T extends { id: string; createdAt: string }>(
+  items: T[],
+  limit: number,
+  cursor: string | undefined,
+): { page: T[]; nextCursor: string | null } {
+  let start = 0
+  if (cursor) {
+    const byId = items.findIndex((item) => item.id === cursor)
+    if (byId >= 0) {
+      start = byId + 1
+    } else {
+      const cursorTime = Date.parse(cursor)
+      if (!Number.isNaN(cursorTime)) {
+        const idx = items.findIndex(
+          (item) => Date.parse(item.createdAt) < cursorTime,
+        )
+        start = idx >= 0 ? idx : items.length
+      }
+    }
+  }
+  const page = items.slice(start, start + limit)
+  const hasMore = start + page.length < items.length
+  const last = page[page.length - 1]
+  return {
+    page,
+    nextCursor: hasMore && last ? last.createdAt : null,
+  }
 }
 
 function enforceAiRateLimit(c: Context) {
-  const result = checkRateLimit(`ai:${clientKey(c)}`, 20, 60_000)
-  if (!result.allowed) {
-    return c.json(
-      errorBody(
-        'RATE_LIMITED',
-        'Too many AI requests. Wait a moment and try again.',
-        { retryAfterMs: result.retryAfterMs },
-      ),
-      429,
-    )
+  return enforceRateLimit(c, `ai:${clientKey(c)}`, 20, 60_000, errorBody)
+}
+
+function enforceWriteRateLimit(c: Context, userId: string) {
+  return enforceRateLimit(c, `write:${userId}`, 60, 60_000, errorBody)
+}
+
+function aiClientMessage(error: Error & { code?: string }): string {
+  if (error.code === 'AI_NOT_CONFIGURED') {
+    return 'AI is not configured on this server.'
   }
-  return null
+  if (error.code === 'VALIDATION_ERROR') return error.message
+  return 'AI request failed. Try again shortly.'
 }
 
 export function createApp() {
   const app = new Hono<{ Variables: AppVariables }>()
 
+  app.use('*', secureHeaders())
+  app.use(
+    '*',
+    bodyLimit({
+      maxSize: 800 * 1024,
+      onError: (c) =>
+        c.json(errorBody('PAYLOAD_TOO_LARGE', 'Request body is too large.'), 413),
+    }),
+  )
+
   app.use(
     '*',
     cors({
-      origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
-      allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+      origin: allowedOrigins(),
+      allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowHeaders: ['Content-Type'],
       credentials: true,
     }),
   )
+
+  // CSRF defense for cookie-authenticated browsers (SameSite=None cross-site).
+  app.use('*', async (c, next) => {
+    const method = c.req.method.toUpperCase()
+    if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+      return next()
+    }
+
+    const origin = c.req.header('origin')?.trim()
+    const referer = c.req.header('referer')?.trim()
+
+    if (origin) {
+      if (!isAllowedBrowserOrigin(origin)) {
+        return c.json(
+          errorBody('CSRF_REJECTED', 'Origin is not allowed.'),
+          403,
+        )
+      }
+      return next()
+    }
+
+    if (referer) {
+      if (!isAllowedBrowserOrigin(referer)) {
+        return c.json(
+          errorBody('CSRF_REJECTED', 'Referer is not allowed.'),
+          403,
+        )
+      }
+      return next()
+    }
+
+    // No Origin and no Referer — CLI / same-origin tests / non-browser clients.
+    return next()
+  })
 
   app.get('/api/health', (c) => c.json({ ok: true, service: 'transmit-api' }))
 
@@ -154,15 +289,31 @@ export function createApp() {
 
   app.post('/api/auth/request-code', async (c) => {
     try {
+      const ipLimited = enforceRateLimit(
+        c,
+        `auth:request-code:ip:${clientKey(c)}`,
+        5,
+        60 * 60_000,
+        errorBody,
+      )
+      if (ipLimited) return ipLimited
+
       const json = await c.req.json()
       const { email } = requestCodeSchema.parse(json)
 
+      const emailLimited = enforceRateLimit(
+        c,
+        `auth:request-code:email:${email}`,
+        3,
+        60 * 60_000,
+        errorBody,
+      )
+      if (emailLimited) return emailLimited
+
       const existing = await findUserByEmail(email)
+      // Always return the same success shape — do not reveal whether email is taken.
       if (existing) {
-        return c.json(
-          errorBody('EMAIL_TAKEN', 'An account with this email already exists.'),
-          409,
-        )
+        return c.json({ ok: true, message: 'Verification code sent.' })
       }
 
       const code = generateOtpCode(OTP_LENGTH)
@@ -190,6 +341,15 @@ export function createApp() {
 
   app.post('/api/auth/signup', async (c) => {
     try {
+      const ipLimited = enforceRateLimit(
+        c,
+        `auth:signup:ip:${clientKey(c)}`,
+        10,
+        60 * 60_000,
+        errorBody,
+      )
+      if (ipLimited) return ipLimited
+
       const json = await c.req.json()
       const payload = signupSchema.parse(json)
 
@@ -231,8 +391,27 @@ export function createApp() {
 
   app.post('/api/auth/login', async (c) => {
     try {
+      const ipLimited = enforceRateLimit(
+        c,
+        `auth:login:ip:${clientKey(c)}`,
+        10,
+        15 * 60_000,
+        errorBody,
+      )
+      if (ipLimited) return ipLimited
+
       const json = await c.req.json()
       const payload = loginSchema.parse(json)
+
+      const emailLimited = enforceRateLimit(
+        c,
+        `auth:login:email:${payload.email}`,
+        5,
+        15 * 60_000,
+        errorBody,
+      )
+      if (emailLimited) return emailLimited
+
       const user = await authenticateUser(payload.email, payload.password)
 
       if (!user) {
@@ -261,8 +440,117 @@ export function createApp() {
   })
 
   app.post('/api/auth/logout', (c) => {
-    deleteCookie(c, SESSION_COOKIE, { path: '/' })
+    deleteCookie(c, SESSION_COOKIE, sessionCookieClearOptions)
     return c.json({ ok: true })
+  })
+
+  app.post('/api/auth/forgot-password', async (c) => {
+    try {
+      const ipLimited = enforceRateLimit(
+        c,
+        `auth:forgot-password:ip:${clientKey(c)}`,
+        5,
+        60 * 60_000,
+        errorBody,
+      )
+      if (ipLimited) return ipLimited
+
+      const json = await c.req.json()
+      const { email } = forgotPasswordSchema.parse(json)
+
+      const emailLimited = enforceRateLimit(
+        c,
+        `auth:forgot-password:email:${email}`,
+        3,
+        60 * 60_000,
+        errorBody,
+      )
+      if (emailLimited) return emailLimited
+
+      const existing = await findUserByEmail(email)
+      // Always return the same success shape — do not reveal whether email exists.
+      if (existing) {
+        const code = generateOtpCode(OTP_LENGTH)
+        await upsertOtp(email, code)
+        await sendVerificationEmail(email, code)
+      }
+
+      return c.json({ ok: true, message: 'Verification code sent.' })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return c.json(
+          errorBody('VALIDATION_ERROR', 'Invalid email.', error.flatten()),
+          400,
+        )
+      }
+      if (error instanceof SyntaxError) {
+        return c.json(errorBody('INVALID_JSON', 'Request body must be JSON.'), 400)
+      }
+      console.error(error)
+      return c.json(
+        errorBody('MAIL_FAILED', 'Failed to send verification code.'),
+        500,
+      )
+    }
+  })
+
+  app.post('/api/auth/reset-password', async (c) => {
+    try {
+      const ipLimited = enforceRateLimit(
+        c,
+        `auth:reset-password:ip:${clientKey(c)}`,
+        10,
+        60 * 60_000,
+        errorBody,
+      )
+      if (ipLimited) return ipLimited
+
+      const json = await c.req.json()
+      const payload = resetPasswordSchema.parse(json)
+
+      const emailLimited = enforceRateLimit(
+        c,
+        `auth:reset-password:email:${payload.email}`,
+        5,
+        60 * 60_000,
+        errorBody,
+      )
+      if (emailLimited) return emailLimited
+
+      const otpResult = await consumeOtp(payload.email, payload.code)
+      if (!otpResult.ok) {
+        return c.json(errorBody('OTP_INVALID', otpResult.reason), 400)
+      }
+
+      const user = await updatePassword(payload.email, payload.password)
+      if (!user) {
+        return c.json(
+          errorBody('OTP_INVALID', 'Invalid or expired verification code.'),
+          400,
+        )
+      }
+
+      return c.json({ ok: true, message: 'Password updated.' })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return c.json(
+          errorBody(
+            'VALIDATION_ERROR',
+            'Invalid reset payload.',
+            error.flatten(),
+          ),
+          400,
+        )
+      }
+      if (error instanceof SyntaxError) {
+        return c.json(errorBody('INVALID_JSON', 'Request body must be JSON.'), 400)
+      }
+      console.error(error)
+      return c.json(
+        errorBody('RESET_FAILED', 'Failed to reset password.'),
+        500,
+      )
+    }
   })
 
   app.get('/api/auth/me', async (c) => {
@@ -277,14 +565,18 @@ export function createApp() {
     try {
       const user = await currentUser(c)
       const q = c.req.query('q') ?? ''
+      if (q.length > 200) {
+        return c.json(
+          errorBody('VALIDATION_ERROR', 'Query must be at most 200 characters.'),
+          400,
+        )
+      }
       const semantic = c.req.query('semantic') === '1' || c.req.query('semantic') === 'true'
-      const [tweets, users] = await Promise.all([
-        semantic && q.trim()
-          ? semanticSearchTweets(q, await listLiveTweets())
-          : searchTweets(q),
-        searchUsers(q, user?.id),
-      ])
-      // Guests can browse results; hide follower-gated reposts.
+      const tweets = semantic && q.trim()
+        ? await semanticSearchTweets(q, await listLiveTweets())
+        : await searchTweets(q)
+      // Guests can search tweets; user discovery requires auth.
+      const users = user ? await searchUsers(q, user.id) : []
       const visible = user
         ? tweets
         : tweets.filter((tweet) => !tweet.repostOfId)
@@ -328,7 +620,7 @@ export function createApp() {
       }
       if (statusError(error)) {
         return c.json(
-          errorBody(error.code ?? 'AI_FAILED', error.message),
+          errorBody(error.code ?? 'AI_FAILED', aiClientMessage(error)),
           error.status as 400 | 502 | 503,
         )
       }
@@ -365,7 +657,7 @@ export function createApp() {
       }
       if (statusError(error)) {
         return c.json(
-          errorBody(error.code ?? 'AI_FAILED', error.message),
+          errorBody(error.code ?? 'AI_FAILED', aiClientMessage(error)),
           error.status as 400 | 502 | 503,
         )
       }
@@ -413,7 +705,7 @@ export function createApp() {
       }
       if (statusError(error)) {
         return c.json(
-          errorBody(error.code ?? 'AI_FAILED', error.message),
+          errorBody(error.code ?? 'AI_FAILED', aiClientMessage(error)),
           error.status as 400 | 502 | 503,
         )
       }
@@ -438,7 +730,13 @@ export function createApp() {
   app.get('/api/explore/suggestions', async (c) => {
     try {
       const user = await currentUser(c)
-      const users = await listPublicUsers(user?.id, 5)
+      if (!user) {
+        return c.json(
+          errorBody('UNAUTHORIZED', 'Sign in to see suggestions.'),
+          401,
+        )
+      }
+      const users = await listPublicUsers(user.id, 5)
       return c.json({ users })
     } catch (error) {
       console.error(error)
@@ -452,10 +750,13 @@ export function createApp() {
   app.get('/api/tweets', async (c) => {
     try {
       const user = await currentUser(c)
-      const tweets = user
+      const limit = parseLimit(c.req.query('limit'), 40)
+      const cursor = c.req.query('cursor')?.trim() || undefined
+      const tweets: Tweet[] = user
         ? await getFeedForUser(user.id)
         : await getPublicFeed()
-      return c.json({ tweets })
+      const { page, nextCursor } = paginateByCursor(tweets, limit, cursor)
+      return c.json({ tweets: page, nextCursor })
     } catch (error) {
       console.error(error)
       return c.json(errorBody('STORE_READ_FAILED', 'Failed to read tweets.'), 500)
@@ -468,6 +769,8 @@ export function createApp() {
       if (!user) {
         return c.json(errorBody('UNAUTHORIZED', 'Sign in to post.'), 401)
       }
+      const writeLimited = enforceWriteRateLimit(c, user.id)
+      if (writeLimited) return writeLimited
 
       const json = await c.req.json()
       const payload = createTweetSchema.parse(json)
@@ -524,6 +827,8 @@ export function createApp() {
       if (!user) {
         return c.json(errorBody('UNAUTHORIZED', 'Sign in to like.'), 401)
       }
+      const writeLimited = enforceWriteRateLimit(c, user.id)
+      if (writeLimited) return writeLimited
 
       const { tweetId } = likeTweetSchema.parse({ tweetId: c.req.param('id') })
       const { tweet, justLiked, ownerId } = await likeTweet(tweetId, user.id)
@@ -559,6 +864,9 @@ export function createApp() {
       if (!user) {
         return c.json(errorBody('UNAUTHORIZED', 'Sign in to comment.'), 401)
       }
+      const writeLimited = enforceWriteRateLimit(c, user.id)
+      if (writeLimited) return writeLimited
+
       const tweetId = likeTweetSchema.parse({ tweetId: c.req.param('id') }).tweetId
       const { body } = commentTweetSchema.parse(await c.req.json())
       const { tweet, ownerId } = await commentOnTweet({
@@ -602,6 +910,9 @@ export function createApp() {
       if (!user) {
         return c.json(errorBody('UNAUTHORIZED', 'Sign in to repost.'), 401)
       }
+      const writeLimited = enforceWriteRateLimit(c, user.id)
+      if (writeLimited) return writeLimited
+
       const tweetId = likeTweetSchema.parse({ tweetId: c.req.param('id') }).tweetId
       const result = await repostTweet({
         tweetId,
@@ -646,6 +957,8 @@ export function createApp() {
       if (!user) {
         return c.json(errorBody('UNAUTHORIZED', 'Sign in to react.'), 401)
       }
+      const writeLimited = enforceWriteRateLimit(c, user.id)
+      if (writeLimited) return writeLimited
 
       const tweetId = likeTweetSchema.parse({ tweetId: c.req.param('id') }).tweetId
       const json = await c.req.json()
@@ -690,6 +1003,8 @@ export function createApp() {
       if (!user) {
         return c.json(errorBody('UNAUTHORIZED', 'Sign in to delete.'), 401)
       }
+      const writeLimited = enforceWriteRateLimit(c, user.id)
+      if (writeLimited) return writeLimited
 
       const tweetId = likeTweetSchema.parse({ tweetId: c.req.param('id') }).tweetId
       await deleteTweet(tweetId, user.id)
@@ -732,13 +1047,22 @@ export function createApp() {
       if (!user) {
         return c.json(errorBody('UNAUTHORIZED', 'Sign in to view messages.'), 401)
       }
-      const peerId = c.req.param('peerId')
+      const peerId = z
+        .string()
+        .uuid({ message: 'Invalid peer id.' })
+        .parse(c.req.param('peerId'))
       const thread = await getThread(user.id, peerId)
       if (!thread) {
         return c.json(errorBody('NOT_FOUND', 'User not found.'), 404)
       }
       return c.json({ thread })
     } catch (error) {
+      if (error instanceof ZodError) {
+        return c.json(
+          errorBody('VALIDATION_ERROR', 'Invalid peer id.', error.flatten()),
+          400,
+        )
+      }
       console.error(error)
       return c.json(errorBody('MESSAGES_FAILED', 'Failed to load thread.'), 500)
     }
@@ -750,6 +1074,9 @@ export function createApp() {
       if (!user) {
         return c.json(errorBody('UNAUTHORIZED', 'Sign in to send messages.'), 401)
       }
+      const writeLimited = enforceWriteRateLimit(c, user.id)
+      if (writeLimited) return writeLimited
+
       const payload = sendMessageSchema.parse(await c.req.json())
       const message = await sendMessage({
         fromUserId: user.id,
@@ -770,7 +1097,7 @@ export function createApp() {
       if (statusError(error)) {
         return c.json(
           errorBody(error.code ?? 'MESSAGE_FAILED', error.message),
-          error.status as 400 | 404,
+          error.status as 400 | 403 | 404,
         )
       }
       console.error(error)
@@ -785,6 +1112,12 @@ export function createApp() {
         return c.json(errorBody('UNAUTHORIZED', 'Sign in to search users.'), 401)
       }
       const q = c.req.query('q') ?? ''
+      if (q.length > 200) {
+        return c.json(
+          errorBody('VALIDATION_ERROR', 'Query must be at most 200 characters.'),
+          400,
+        )
+      }
       const users = await searchUsers(q, user.id)
       return c.json({ users, query: q })
     } catch (error) {
@@ -796,10 +1129,7 @@ export function createApp() {
   app.get('/api/users/:id/tweets', async (c) => {
     try {
       const viewer = await currentUser(c)
-      const tweets = await listTweetsByUser(
-        c.req.param('id'),
-        viewer?.id ?? '00000000-0000-0000-0000-000000000000',
-      )
+      const tweets = await listTweetsByUser(c.req.param('id'), viewer?.id)
       return c.json({ tweets })
     } catch (error) {
       console.error(error)
@@ -853,6 +1183,9 @@ export function createApp() {
       if (!viewer) {
         return c.json(errorBody('UNAUTHORIZED', 'Sign in to follow.'), 401)
       }
+      const writeLimited = enforceWriteRateLimit(c, viewer.id)
+      if (writeLimited) return writeLimited
+
       const result = await toggleFollow(viewer.id, c.req.param('id'))
       if (result.isFollowing) {
         await pushNotification({
@@ -875,14 +1208,42 @@ export function createApp() {
     }
   })
 
+  app.post('/api/users/:id/block', async (c) => {
+    try {
+      const viewer = await currentUser(c)
+      if (!viewer) {
+        return c.json(errorBody('UNAUTHORIZED', 'Sign in to block.'), 401)
+      }
+      const writeLimited = enforceWriteRateLimit(c, viewer.id)
+      if (writeLimited) return writeLimited
+
+      const result = await toggleBlock(viewer.id, c.req.param('id'))
+      return c.json(result)
+    } catch (error) {
+      if (statusError(error)) {
+        return c.json(
+          errorBody(error.code ?? 'BLOCK_FAILED', error.message),
+          error.status as 400 | 404,
+        )
+      }
+      console.error(error)
+      return c.json(errorBody('BLOCK_FAILED', 'Failed to toggle block.'), 500)
+    }
+  })
+
   app.get('/api/notifications', async (c) => {
     try {
       const user = await currentUser(c)
       if (!user) {
         return c.json(errorBody('UNAUTHORIZED', 'Sign in required.'), 401)
       }
-      const notifications = await listNotificationsForUser(user.id)
-      return c.json({ notifications })
+      const limit = parseLimit(c.req.query('limit'), 60)
+      const cursor = c.req.query('cursor')?.trim() || undefined
+      const { notifications, nextCursor } = await listNotificationsForUser(
+        user.id,
+        { limit, cursor },
+      )
+      return c.json({ notifications, nextCursor })
     } catch (error) {
       console.error(error)
       return c.json(

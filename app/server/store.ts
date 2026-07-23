@@ -9,7 +9,7 @@ import {
   type TweetStore,
 } from '../shared/schemas.ts'
 import { listFollowingIds } from './follows.ts'
-import { atomicWriteJson, DEFAULT_DATA_DIR, readJsonFile } from './jsonStore.ts'
+import { DEFAULT_DATA_DIR, mutateJsonFile } from './jsonStore.ts'
 
 function storePath(): string {
   return (
@@ -18,6 +18,12 @@ function storePath(): string {
 }
 
 const emptyStore = (): TweetStore => ({ tweets: [] })
+
+function parseStore(raw: unknown): TweetStore {
+  const parsed = tweetStoreSchema.safeParse(raw)
+  if (!parsed.success) throw new Error('Tweet store is corrupt or invalid.')
+  return parsed.data
+}
 
 function httpError(message: string, status: number, code?: string): Error {
   const error = new Error(message)
@@ -41,27 +47,20 @@ function shuffle<T>(items: T[]): T[] {
   return copy
 }
 
-async function readStore(): Promise<TweetStore> {
-  return readJsonFile(storePath(), emptyStore(), (raw) => {
-    const parsed = tweetStoreSchema.safeParse(raw)
-    if (!parsed.success) throw new Error('Tweet store is corrupt or invalid.')
-    return parsed.data
-  })
-}
-
-async function writeStore(store: TweetStore): Promise<void> {
-  await atomicWriteJson(storePath(), store)
+function likedByOf(tweet: Tweet): string[] {
+  return Array.isArray(tweet.likedBy) ? tweet.likedBy : []
 }
 
 /** Drop posts older than one day and persist if anything changed. */
 export async function purgeExpired(): Promise<Tweet[]> {
-  const store = await readStore()
-  const now = Date.now()
-  const live = store.tweets.filter((tweet) => !isTweetExpired(tweet, now))
-  if (live.length !== store.tweets.length) {
-    await writeStore({ tweets: live })
-  }
-  return live
+  return mutateJsonFile(storePath(), emptyStore(), parseStore, (store) => {
+    const now = Date.now()
+    const live = store.tweets.filter((tweet) => !isTweetExpired(tweet, now))
+    if (live.length === store.tweets.length) {
+      return { store, result: live, dirty: false }
+    }
+    return { store: { tweets: live }, result: live }
+  })
 }
 
 export async function readTweets(): Promise<Tweet[]> {
@@ -70,46 +69,22 @@ export async function readTweets(): Promise<Tweet[]> {
 
 function annotateForViewer(
   tweets: Tweet[],
-  userId: string,
+  userId: string | undefined,
   catalog: Tweet[] = tweets,
 ): Tweet[] {
   const myRepostTargets = new Set(
-    catalog
-      .filter((tweet) => tweet.userId === userId && tweet.repostOfId)
-      .map((tweet) => tweet.repostOfId as string),
+    userId
+      ? catalog
+          .filter((tweet) => tweet.userId === userId && tweet.repostOfId)
+          .map((tweet) => tweet.repostOfId as string)
+      : [],
   )
-  return tweets.map((tweet) => ({
-    ...tweet,
-    reactions: tweet.reactions ?? [],
-    comments: tweet.comments ?? [],
-    tags: tweet.tags ?? [],
-    imageUrl: tweet.imageUrl ?? null,
-    replyToId: tweet.replyToId ?? null,
-    repostOfId: tweet.repostOfId ?? null,
-    repostOfHandle: tweet.repostOfHandle ?? null,
-    repostCount: tweet.repostCount ?? 0,
-    // Viewer-specific — never trust the persisted flag.
-    reposted: myRepostTargets.has(tweet.id),
-  }))
-}
-
-function annotateOne(
-  tweet: Tweet,
-  userId: string,
-  catalog: Tweet[],
-): Tweet {
-  return annotateForViewer([tweet], userId, catalog)[0]
-}
-
-/** Public landing feed — recent originals only (no follower-gated reposts). */
-export async function getPublicFeed(limit = 40): Promise<Tweet[]> {
-  const tweets = await purgeExpired()
-  return tweets
-    .filter((tweet) => !tweet.repostOfId)
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    .slice(0, limit)
-    .map((tweet) => ({
+  return tweets.map((tweet) => {
+    const likedBy = likedByOf(tweet)
+    return {
       ...tweet,
+      likedBy,
+      likes: likedBy.length,
       reactions: tweet.reactions ?? [],
       comments: tweet.comments ?? [],
       tags: tweet.tags ?? [],
@@ -118,9 +93,29 @@ export async function getPublicFeed(limit = 40): Promise<Tweet[]> {
       repostOfId: tweet.repostOfId ?? null,
       repostOfHandle: tweet.repostOfHandle ?? null,
       repostCount: tweet.repostCount ?? 0,
-      reposted: false,
-      liked: false,
-    }))
+      // Viewer-specific — never trust the persisted flag.
+      liked: userId ? likedBy.includes(userId) : false,
+      reposted: userId ? myRepostTargets.has(tweet.id) : false,
+    }
+  })
+}
+
+function annotateOne(
+  tweet: Tweet,
+  userId: string | undefined,
+  catalog: Tweet[],
+): Tweet {
+  return annotateForViewer([tweet], userId, catalog)[0]
+}
+
+/** Public landing feed — recent originals only (no follower-gated reposts). */
+export async function getPublicFeed(limit?: number): Promise<Tweet[]> {
+  const tweets = await purgeExpired()
+  const sorted = tweets
+    .filter((tweet) => !tweet.repostOfId)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+  const sliced = limit == null ? sorted : sorted.slice(0, limit)
+  return sliced.map((tweet) => annotateOne(tweet, undefined, tweets))
 }
 
 /** Your posts + up to 5 random posts from everyone else (non-expired).
@@ -150,7 +145,7 @@ export async function getFeedForUser(userId: string): Promise<Tweet[]> {
 /** Full timeline for a profile (originals, replies, and reposts). */
 export async function listTweetsByUser(
   profileUserId: string,
-  viewerId: string,
+  viewerId?: string,
 ): Promise<Tweet[]> {
   const tweets = await purgeExpired()
   const mine = tweets
@@ -247,12 +242,6 @@ export async function createTweet(input: {
     imageUrl: input.imageUrl,
     replyToId: input.replyToId,
   })
-  const tweets = await purgeExpired()
-
-  if (data.replyToId) {
-    const parent = tweets.find((tweet) => tweet.id === data.replyToId)
-    if (!parent) throw httpError('Parent post not found.', 404)
-  }
 
   const tags = (input.tags ?? [])
     .map((tag) =>
@@ -265,27 +254,41 @@ export async function createTweet(input: {
     .filter(Boolean)
     .slice(0, 4)
 
-  const tweet: Tweet = {
-    id: randomUUID(),
-    body: data.body,
-    handle: input.handle,
-    userId: input.userId,
-    createdAt: new Date().toISOString(),
-    likes: 0,
-    liked: false,
-    reactions: [],
-    imageUrl: data.imageUrl ?? null,
-    replyToId: data.replyToId ?? null,
-    repostOfId: null,
-    repostOfHandle: null,
-    comments: [],
-    repostCount: 0,
-    reposted: false,
-    tags,
-  }
+  return mutateJsonFile(storePath(), emptyStore(), parseStore, (store) => {
+    const now = Date.now()
+    const tweets = store.tweets.filter((tweet) => !isTweetExpired(tweet, now))
 
-  await writeStore({ tweets: [tweet, ...tweets] })
-  return tweet
+    if (data.replyToId) {
+      const parent = tweets.find((tweet) => tweet.id === data.replyToId)
+      if (!parent) throw httpError('Parent post not found.', 404)
+    }
+
+    const tweet: Tweet = {
+      id: randomUUID(),
+      body: data.body,
+      handle: input.handle,
+      userId: input.userId,
+      createdAt: new Date().toISOString(),
+      likes: 0,
+      liked: false,
+      likedBy: [],
+      reactions: [],
+      imageUrl: data.imageUrl ?? null,
+      replyToId: data.replyToId ?? null,
+      repostOfId: null,
+      repostOfHandle: null,
+      comments: [],
+      repostCount: 0,
+      reposted: false,
+      tags,
+    }
+
+    const next = [tweet, ...tweets]
+    return {
+      store: { tweets: next },
+      result: annotateOne(tweet, input.userId, next),
+    }
+  })
 }
 
 export async function commentOnTweet(input: {
@@ -294,36 +297,45 @@ export async function commentOnTweet(input: {
   handle: string
   userId: string
 }): Promise<{ tweet: Tweet; ownerId?: string }> {
-  const tweets = await purgeExpired()
-  const index = tweets.findIndex((tweet) => tweet.id === input.tweetId)
-  if (index === -1) throw httpError('Tweet not found.', 404)
+  return mutateJsonFile(storePath(), emptyStore(), parseStore, (store) => {
+    const now = Date.now()
+    const tweets = store.tweets.filter((tweet) => !isTweetExpired(tweet, now))
+    const index = tweets.findIndex((tweet) => tweet.id === input.tweetId)
+    if (index === -1) throw httpError('Tweet not found.', 404)
 
-  const current = tweets[index]
-  const comment = {
-    id: randomUUID(),
-    body: input.body.trim(),
-    handle: input.handle,
-    userId: input.userId,
-    createdAt: new Date().toISOString(),
-  }
-  const updated: Tweet = {
-    ...current,
-    comments: [...(current.comments ?? []), comment],
-    reactions: current.reactions ?? [],
-    imageUrl: current.imageUrl ?? null,
-    replyToId: current.replyToId ?? null,
-    repostOfId: current.repostOfId ?? null,
-    repostOfHandle: current.repostOfHandle ?? null,
-    repostCount: current.repostCount ?? 0,
-    reposted: false,
-  }
-  const next = [...tweets]
-  next[index] = updated
-  await writeStore({ tweets: next })
-  return {
-    tweet: annotateOne(updated, input.userId, next),
-    ownerId: current.userId,
-  }
+    const current = tweets[index]
+    const comment = {
+      id: randomUUID(),
+      body: input.body.trim(),
+      handle: input.handle,
+      userId: input.userId,
+      createdAt: new Date().toISOString(),
+    }
+    const likedBy = likedByOf(current)
+    const updated: Tweet = {
+      ...current,
+      likedBy,
+      likes: likedBy.length,
+      liked: false,
+      comments: [...(current.comments ?? []), comment],
+      reactions: current.reactions ?? [],
+      imageUrl: current.imageUrl ?? null,
+      replyToId: current.replyToId ?? null,
+      repostOfId: current.repostOfId ?? null,
+      repostOfHandle: current.repostOfHandle ?? null,
+      repostCount: current.repostCount ?? 0,
+      reposted: false,
+    }
+    const next = [...tweets]
+    next[index] = updated
+    return {
+      store: { tweets: next },
+      result: {
+        tweet: annotateOne(updated, input.userId, next),
+        ownerId: current.userId,
+      },
+    }
+  })
 }
 
 /** Create a repost entry attributed to the current user. */
@@ -332,130 +344,173 @@ export async function repostTweet(input: {
   handle: string
   userId: string
 }): Promise<{ original: Tweet; repost: Tweet; ownerId?: string }> {
-  const tweets = await purgeExpired()
-  const index = tweets.findIndex((tweet) => tweet.id === input.tweetId)
-  if (index === -1) throw httpError('Tweet not found.', 404)
+  return mutateJsonFile(storePath(), emptyStore(), parseStore, (store) => {
+    const now = Date.now()
+    const tweets = store.tweets.filter((tweet) => !isTweetExpired(tweet, now))
+    const index = tweets.findIndex((tweet) => tweet.id === input.tweetId)
+    if (index === -1) throw httpError('Tweet not found.', 404)
 
-  let target = tweets[index]
-  // Always attribute the repost to the root post, not another repost.
-  if (target.repostOfId) {
-    const root = tweets.find((tweet) => tweet.id === target.repostOfId)
-    if (root) target = root
-  }
+    let target = tweets[index]
+    // Always attribute the repost to the root post, not another repost.
+    if (target.repostOfId) {
+      const root = tweets.find((tweet) => tweet.id === target.repostOfId)
+      if (root) target = root
+    }
 
-  // Self-reposts are allowed so single-operator feeds can still use ↻.
+    const already = tweets.some(
+      (tweet) =>
+        tweet.userId === input.userId && tweet.repostOfId === target.id,
+    )
+    if (already) {
+      throw httpError('Already reposted.', 409, 'ALREADY_REPOSTED')
+    }
 
-  const already = tweets.some(
-    (tweet) =>
-      tweet.userId === input.userId && tweet.repostOfId === target.id,
-  )
-  if (already) {
-    throw httpError('Already reposted.', 409, 'ALREADY_REPOSTED')
-  }
+    const targetIndex = tweets.findIndex((tweet) => tweet.id === target.id)
+    if (targetIndex === -1) throw httpError('Tweet not found.', 404)
 
-  const targetIndex = tweets.findIndex((tweet) => tweet.id === target.id)
-  if (targetIndex === -1) throw httpError('Tweet not found.', 404)
+    const repost: Tweet = {
+      id: randomUUID(),
+      body: target.body,
+      handle: input.handle,
+      userId: input.userId,
+      createdAt: new Date().toISOString(),
+      likes: 0,
+      liked: false,
+      likedBy: [],
+      reactions: [],
+      imageUrl: target.imageUrl ?? null,
+      replyToId: null,
+      repostOfId: target.id,
+      repostOfHandle: target.handle,
+      comments: [],
+      repostCount: 0,
+      reposted: false,
+      tags: target.tags ?? [],
+    }
 
-  const repost: Tweet = {
-    id: randomUUID(),
-    body: target.body,
-    handle: input.handle,
-    userId: input.userId,
-    createdAt: new Date().toISOString(),
-    likes: 0,
-    liked: false,
-    reactions: [],
-    imageUrl: target.imageUrl ?? null,
-    replyToId: null,
-    repostOfId: target.id,
-    repostOfHandle: target.handle,
-    comments: [],
-    repostCount: 0,
-    reposted: false,
-    tags: target.tags ?? [],
-  }
+    const targetLikedBy = likedByOf(target)
+    const updatedOriginal: Tweet = {
+      ...target,
+      likedBy: targetLikedBy,
+      likes: targetLikedBy.length,
+      liked: false,
+      repostCount: (target.repostCount ?? 0) + 1,
+      reactions: target.reactions ?? [],
+      comments: target.comments ?? [],
+      imageUrl: target.imageUrl ?? null,
+      replyToId: target.replyToId ?? null,
+      repostOfId: target.repostOfId ?? null,
+      repostOfHandle: target.repostOfHandle ?? null,
+      reposted: false,
+    }
 
-  const updatedOriginal: Tweet = {
-    ...target,
-    repostCount: (target.repostCount ?? 0) + 1,
-    reactions: target.reactions ?? [],
-    comments: target.comments ?? [],
-    imageUrl: target.imageUrl ?? null,
-    replyToId: target.replyToId ?? null,
-    repostOfId: target.repostOfId ?? null,
-    repostOfHandle: target.repostOfHandle ?? null,
-    reposted: false,
-  }
-
-  const without = tweets.filter((_, i) => i !== targetIndex)
-  const next = [repost, updatedOriginal, ...without]
-  await writeStore({ tweets: next })
-  const [annotatedRepost, annotatedOriginal] = annotateForViewer(
-    [repost, updatedOriginal],
-    input.userId,
-    next,
-  )
-  return {
-    original: annotatedOriginal,
-    repost: annotatedRepost,
-    ownerId: target.userId,
-  }
+    const without = tweets.filter((_, i) => i !== targetIndex)
+    const next = [repost, updatedOriginal, ...without]
+    const [annotatedRepost, annotatedOriginal] = annotateForViewer(
+      [repost, updatedOriginal],
+      input.userId,
+      next,
+    )
+    return {
+      store: { tweets: next },
+      result: {
+        original: annotatedOriginal,
+        repost: annotatedRepost,
+        ownerId: target.userId,
+      },
+    }
+  })
 }
 
-/** Toggle like: first press +1, second press -1 (MVP single-viewer state). */
+/** Toggle like for this viewer via likedBy ledger. */
 export async function likeTweet(
   tweetId: string,
   viewerId: string,
 ): Promise<{ tweet: Tweet; justLiked: boolean; ownerId?: string }> {
-  const tweets = await purgeExpired()
-  const index = tweets.findIndex((tweet) => tweet.id === tweetId)
+  return mutateJsonFile(storePath(), emptyStore(), parseStore, (store) => {
+    const now = Date.now()
+    const tweets = store.tweets.filter((tweet) => !isTweetExpired(tweet, now))
+    const index = tweets.findIndex((tweet) => tweet.id === tweetId)
 
-  if (index === -1) {
-    throw httpError('Tweet not found.', 404)
-  }
+    if (index === -1) {
+      throw httpError('Tweet not found.', 404)
+    }
 
-  const current = tweets[index]
-  const liked = !current.liked
-  const updated: Tweet = {
-    ...current,
-    liked,
-    likes: liked ? current.likes + 1 : Math.max(0, current.likes - 1),
-    reactions: current.reactions ?? [],
-    comments: current.comments ?? [],
-    imageUrl: current.imageUrl ?? null,
-    replyToId: current.replyToId ?? null,
-    repostOfId: current.repostOfId ?? null,
-    repostOfHandle: current.repostOfHandle ?? null,
-    repostCount: current.repostCount ?? 0,
-    reposted: false,
-  }
-  const next = [...tweets]
-  next[index] = updated
-  await writeStore({ tweets: next })
-  return {
-    tweet: annotateOne(updated, viewerId, next),
-    justLiked: liked,
-    ownerId: current.userId,
-  }
+    const current = tweets[index]
+    const likedBy = [...likedByOf(current)]
+    const existing = likedBy.indexOf(viewerId)
+    let justLiked: boolean
+    if (existing >= 0) {
+      likedBy.splice(existing, 1)
+      justLiked = false
+    } else {
+      likedBy.push(viewerId)
+      justLiked = true
+    }
+
+    const updated: Tweet = {
+      ...current,
+      likedBy,
+      likes: likedBy.length,
+      liked: false,
+      reactions: current.reactions ?? [],
+      comments: current.comments ?? [],
+      imageUrl: current.imageUrl ?? null,
+      replyToId: current.replyToId ?? null,
+      repostOfId: current.repostOfId ?? null,
+      repostOfHandle: current.repostOfHandle ?? null,
+      repostCount: current.repostCount ?? 0,
+      reposted: false,
+    }
+    const next = [...tweets]
+    next[index] = updated
+    return {
+      store: { tweets: next },
+      result: {
+        tweet: annotateOne(updated, viewerId, next),
+        justLiked,
+        ownerId: current.userId,
+      },
+    }
+  })
 }
 
 export async function deleteTweet(
   tweetId: string,
   userId: string,
 ): Promise<void> {
-  const tweets = await purgeExpired()
-  const index = tweets.findIndex((tweet) => tweet.id === tweetId)
+  await mutateJsonFile(storePath(), emptyStore(), parseStore, (store) => {
+    const now = Date.now()
+    const tweets = store.tweets.filter((tweet) => !isTweetExpired(tweet, now))
+    const index = tweets.findIndex((tweet) => tweet.id === tweetId)
 
-  if (index === -1) {
-    throw httpError('Tweet not found.', 404)
-  }
+    if (index === -1) {
+      throw httpError('Tweet not found.', 404)
+    }
 
-  const tweet = tweets[index]
-  if (tweet.userId !== userId) {
-    throw httpError('You can only delete your own posts.', 403, 'FORBIDDEN')
-  }
+    const tweet = tweets[index]
+    if (tweet.userId !== userId) {
+      throw httpError('You can only delete your own posts.', 403, 'FORBIDDEN')
+    }
 
-  await writeStore({ tweets: tweets.filter((_, i) => i !== index) })
+    let next = tweets.filter((_, i) => i !== index)
+
+    if (tweet.repostOfId) {
+      // Deleting a repost — decrement the original's repostCount.
+      next = next.map((item) => {
+        if (item.id !== tweet.repostOfId) return item
+        return {
+          ...item,
+          repostCount: Math.max(0, (item.repostCount ?? 0) - 1),
+        }
+      })
+    } else {
+      // Deleting an original — remove orphaned reposts that point at it.
+      next = next.filter((item) => item.repostOfId !== tweet.id)
+    }
+
+    return { store: { tweets: next }, result: undefined }
+  })
 }
 
 /** Toggle an emoji reaction for this user (add if missing, remove if present). */
@@ -470,43 +525,52 @@ export async function reactToTweet(
   emoji: string
 }> {
   const { emoji } = reactTweetSchema.parse({ emoji: emojiRaw })
-  const tweets = await purgeExpired()
-  const index = tweets.findIndex((tweet) => tweet.id === tweetId)
+  return mutateJsonFile(storePath(), emptyStore(), parseStore, (store) => {
+    const now = Date.now()
+    const tweets = store.tweets.filter((tweet) => !isTweetExpired(tweet, now))
+    const index = tweets.findIndex((tweet) => tweet.id === tweetId)
 
-  if (index === -1) {
-    throw httpError('Tweet not found.', 404)
-  }
+    if (index === -1) {
+      throw httpError('Tweet not found.', 404)
+    }
 
-  const current = tweets[index]
-  const reactions = [...(current.reactions ?? [])]
-  const existing = reactions.findIndex(
-    (reaction) => reaction.userId === userId && reaction.emoji === emoji,
-  )
+    const current = tweets[index]
+    const reactions = [...(current.reactions ?? [])]
+    const existing = reactions.findIndex(
+      (reaction) => reaction.userId === userId && reaction.emoji === emoji,
+    )
 
-  if (existing >= 0) {
-    reactions.splice(existing, 1)
-  } else {
-    reactions.push({ emoji, userId })
-  }
+    if (existing >= 0) {
+      reactions.splice(existing, 1)
+    } else {
+      reactions.push({ emoji, userId })
+    }
 
-  const updated: Tweet = {
-    ...current,
-    reactions,
-    comments: current.comments ?? [],
-    imageUrl: current.imageUrl ?? null,
-    replyToId: current.replyToId ?? null,
-    repostOfId: current.repostOfId ?? null,
-    repostOfHandle: current.repostOfHandle ?? null,
-    repostCount: current.repostCount ?? 0,
-    reposted: false,
-  }
-  const next = [...tweets]
-  next[index] = updated
-  await writeStore({ tweets: next })
-  return {
-    tweet: annotateOne(updated, userId, next),
-    justAdded: existing < 0,
-    ownerId: current.userId,
-    emoji,
-  }
+    const likedBy = likedByOf(current)
+    const updated: Tweet = {
+      ...current,
+      likedBy,
+      likes: likedBy.length,
+      liked: false,
+      reactions,
+      comments: current.comments ?? [],
+      imageUrl: current.imageUrl ?? null,
+      replyToId: current.replyToId ?? null,
+      repostOfId: current.repostOfId ?? null,
+      repostOfHandle: current.repostOfHandle ?? null,
+      repostCount: current.repostCount ?? 0,
+      reposted: false,
+    }
+    const next = [...tweets]
+    next[index] = updated
+    return {
+      store: { tweets: next },
+      result: {
+        tweet: annotateOne(updated, userId, next),
+        justAdded: existing < 0,
+        ownerId: current.userId,
+        emoji,
+      },
+    }
+  })
 }

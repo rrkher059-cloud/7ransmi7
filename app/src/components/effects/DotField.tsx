@@ -267,7 +267,28 @@ const DotField = memo(function DotField({
     doResize()
     window.addEventListener('resize', resize)
     window.addEventListener('mousemove', onMouseMove, { passive: true })
-    rafRef.current = requestAnimationFrame(tick)
+
+    const prefersReduced =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    if (prefersReduced) {
+      // Static frame only — no continuous animation.
+      const { w, h } = sizeRef.current
+      if (w > 0 && h > 0) {
+        const p = propsRef.current
+        context.fillStyle = p.gradientFrom
+        context.beginPath()
+        for (const d of dotsRef.current) {
+          const rad = p.dotRadius / 2
+          context.moveTo(d.ax + rad, d.ay)
+          context.arc(d.ax, d.ay, rad, 0, TWO_PI)
+        }
+        context.fill()
+      }
+    } else {
+      rafRef.current = requestAnimationFrame(tick)
+    }
 
     const parent = canvas.parentElement
     const observer =

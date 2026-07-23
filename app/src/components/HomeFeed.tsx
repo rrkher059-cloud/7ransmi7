@@ -8,7 +8,7 @@ import { Panel } from '@/components/ui/Panel'
 import {
   aiSemanticSearch,
   ApiClientError,
-  type PublicUser,
+  type PrivateUser,
   type Tweet,
 } from '@/lib/api'
 
@@ -21,7 +21,7 @@ type HomeFeedProps = {
   busyId: string | null
   feedError: string | null
   composerError: string | null
-  profileUser?: PublicUser | null
+  profileUser?: PrivateUser | null
   onPost: (input: { body: string; imageUrl?: string }) => Promise<void>
   onReact: (tweetId: string, emoji: string) => Promise<void>
   onLike: (tweetId: string) => Promise<void>

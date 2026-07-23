@@ -1,8 +1,12 @@
 import { Resend } from 'resend'
 
-/** Always mirror the code to the API terminal so local signup stays usable. */
+function shouldLogOtpToConsole(): boolean {
+  const apiKey = process.env.RESEND_API_KEY?.trim()
+  return !apiKey && process.env.NODE_ENV !== 'production'
+}
+
 function logVerificationCode(email: string, code: string): void {
-  // Use console.log (not info) so concurrently / Windows terminals always show it.
+  if (!shouldLogOtpToConsole()) return
   console.log(`\n[auth] Verification code for ${email}: ${code}\n`)
 }
 
@@ -30,9 +34,9 @@ export async function sendVerificationEmail(
     })
 
     if (error) {
-      console.error('[auth] Resend failed; code is still printed above.', error)
+      console.error('[auth] Resend failed.', error)
     }
   } catch (error) {
-    console.error('[auth] Resend threw; code is still printed above.', error)
+    console.error('[auth] Resend threw.', error)
   }
 }

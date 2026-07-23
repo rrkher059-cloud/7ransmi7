@@ -12,7 +12,7 @@ import { NAV_ITEMS, Sidebar } from '@/components/Sidebar'
 import { Button } from '@/components/ui/Button'
 import { MicroLabel } from '@/components/ui/MicroLabel'
 import { Panel } from '@/components/ui/Panel'
-import type { PublicUser, Tweet } from '@/lib/api'
+import type { PrivateUser, PublicUser, Tweet } from '@/lib/api'
 
 type HomeFeedHandlers = {
   handle: string
@@ -35,7 +35,7 @@ type MainLayoutProps = {
   online?: boolean
   onLogout?: () => void
   feed: HomeFeedHandlers
-  profileUser?: PublicUser | null
+  profileUser?: PrivateUser | null
   onOpenAuth?: (mode?: AuthMode, reason?: string) => void
   onRequireAuth?: (reason?: string) => boolean
   onGoHome?: () => void
@@ -105,21 +105,17 @@ export function MainLayout({
     setActiveTab(3)
   }
 
-  const profileSubject =
+  const profileSubject: PublicUser | PrivateUser | null =
     viewingProfile != null
-      ? {
-          id: viewingProfile.id,
-          handle: viewingProfile.handle,
-          email:
-            profileUser?.id === viewingProfile.id
-              ? profileUser.email
-              : 'operator@relay.local',
-          createdAt:
-            profileUser?.id === viewingProfile.id
-              ? profileUser.createdAt
-              : (feed.tweets.find((t) => t.userId === viewingProfile.id)
-                  ?.createdAt ?? new Date().toISOString()),
-        }
+      ? profileUser?.id === viewingProfile.id
+        ? profileUser
+        : {
+            id: viewingProfile.id,
+            handle: viewingProfile.handle,
+            createdAt:
+              feed.tweets.find((t) => t.userId === viewingProfile.id)
+                ?.createdAt ?? new Date().toISOString(),
+          }
       : profileUser
 
   let content: ReactNode

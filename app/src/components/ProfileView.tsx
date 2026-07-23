@@ -8,8 +8,10 @@ import {
   type ProfileSubTab,
 } from '@/lib/profileFilters'
 import {
+  loadProfileBio,
   loadProfileMedia,
   readImageAsDataUrl,
+  saveProfileBio,
   saveProfileMedia,
 } from '@/lib/profileMedia'
 import {
@@ -18,7 +20,9 @@ import {
   fetchFollowing,
   fetchFollowStats,
   fetchUserTweets,
+  toggleBlockUser,
   toggleFollowUser,
+  type PrivateUser,
   type PublicUser,
   type Tweet,
 } from '@/lib/api'
@@ -32,12 +36,18 @@ const SUB_TABS: { id: ProfileSubTab; label: string }[] = [
 ]
 
 type ProfileViewProps = {
-  user: PublicUser
+  user: PublicUser | PrivateUser
   tweets: Tweet[]
   isSelf?: boolean
   onMessage?: () => void
   onOpenProfile?: (profile: { id: string; handle: string }) => void
   onRequireAuth?: () => boolean
+}
+
+function selfEmail(user: PublicUser | PrivateUser): string | null {
+  return 'email' in user && typeof user.email === 'string' && user.email
+    ? user.email
+    : null
 }
 
 export function ProfileView({
@@ -50,14 +60,14 @@ export function ProfileView({
 }: ProfileViewProps) {
   const [subTab, setSubTab] = useState<ProfileSubTab>('posts')
   const [editing, setEditing] = useState(false)
-  const [bio, setBio] = useState(
-    'Operator on the Kuiper relay. Logging mission bursts and #signalops chatter.',
-  )
-  const [draftBio, setDraftBio] = useState(bio)
+  const [bio, setBio] = useState(() => loadProfileBio(user.id))
+  const [draftBio, setDraftBio] = useState(() => loadProfileBio(user.id))
   const [followers, setFollowers] = useState(0)
   const [following, setFollowing] = useState(0)
   const [isFollowing, setIsFollowing] = useState(false)
   const [followBusy, setFollowBusy] = useState(false)
+  const [isBlocked, setIsBlocked] = useState(false)
+  const [blockBusy, setBlockBusy] = useState(false)
   const [listKind, setListKind] = useState<'followers' | 'following' | null>(
     null,
   )
@@ -72,16 +82,34 @@ export function ProfileView({
     () => loadProfileMedia(user.id).bannerUrl,
   )
   const mediaReady = useRef(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const listCloseRef = useRef<HTMLButtonElement>(null)
 
   const bannerInputRef = useRef<HTMLInputElement>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  const email = isSelf ? selfEmail(user) : null
 
   useEffect(() => {
     const stored = loadProfileMedia(user.id)
     setAvatarUrl(stored.avatarUrl)
     setBannerUrl(stored.bannerUrl)
+    const nextBio = loadProfileBio(user.id)
+    setBio(nextBio)
+    setDraftBio(nextBio)
+    setEditing(false)
+    setIsBlocked(false)
     mediaReady.current = false
   }, [user.id])
+
+  useEffect(() => {
+    if (!listKind) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setListKind(null)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    listCloseRef.current?.focus()
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [listKind])
 
   useEffect(() => {
     let cancelled = false
@@ -151,6 +179,20 @@ export function ProfileView({
     }
   }
 
+  async function handleBlockToggle() {
+    if (isSelf || blockBusy) return
+    if (onRequireAuth && !onRequireAuth()) return
+    setBlockBusy(true)
+    try {
+      const result = await toggleBlockUser(user.id)
+      setIsBlocked(result.isBlocked)
+    } catch (error) {
+      console.error(error instanceof ApiClientError ? error.message : error)
+    } finally {
+      setBlockBusy(false)
+    }
+  }
+
   async function openList(kind: 'followers' | 'following') {
     setListKind(kind)
     setListLoading(true)
@@ -172,10 +214,13 @@ export function ProfileView({
     [timeline, user.id, subTab],
   )
 
-  const initial = user.handle.replace('@', '').slice(0, 1).toUpperCase() || 'X'
+  const initial =
+    (user.handle ?? '').replace('@', '').slice(0, 1).toUpperCase() || 'X'
 
   function saveProfile() {
-    setBio(draftBio.trim() || bio)
+    const next = draftBio.trim()
+    setBio(next)
+    saveProfileBio(user.id, next)
     setEditing(false)
   }
 
@@ -301,6 +346,14 @@ export function ProfileView({
             <h1 className="text-[22px] uppercase tracking-[0.12em] text-text-primary">
               {user.handle}
             </h1>
+            {email ? (
+              <p className="mt-1 text-[12px] text-text-muted">{email}</p>
+            ) : null}
+            {isSelf ? (
+              <p className="mt-2 text-[10px] uppercase tracking-[0.12em] text-text-muted">
+                Saved on this device only
+              </p>
+            ) : null}
           </div>
           {isSelf ? (
             <BorderGlow
@@ -385,6 +438,17 @@ export function ProfileView({
                   </button>
                 </BorderGlow>
               ) : null}
+              <button
+                type="button"
+                disabled={blockBusy}
+                onClick={() => {
+                  void handleBlockToggle()
+                }}
+                className="inline-flex items-center justify-center border border-[#4a4744] px-4 py-2 text-[12px] uppercase tracking-[0.15em] text-text-muted transition-colors duration-150 ease-in-out hover:border-accent hover:text-accent disabled:opacity-50"
+                style={{ borderRadius: 0 }}
+              >
+                {isBlocked ? 'Unblock' : 'Block'}
+              </button>
             </div>
           )}
         </div>
@@ -441,8 +505,12 @@ export function ProfileView({
               </BorderGlow>
             </div>
           </div>
-        ) : (
+        ) : bio ? (
           <p className="mt-4 text-[14px] leading-[1.4] text-text-primary">{bio}</p>
+        ) : (
+          <p className="mt-4 text-[14px] leading-[1.4] text-text-muted">
+            {isSelf ? 'No bio yet.' : 'No bio on this device.'}
+          </p>
         )}
 
         <div className="mt-4 flex flex-wrap gap-4 text-[12px] uppercase tracking-[0.12em]">
@@ -482,6 +550,7 @@ export function ProfileView({
           onClick={() => setListKind(null)}
         >
           <div
+            ref={dialogRef}
             className="max-h-[70vh] w-full max-w-md overflow-hidden border border-[#4a4744] bg-[#262421]"
             style={{ borderRadius: 0 }}
             onClick={(event) => event.stopPropagation()}
@@ -493,6 +562,7 @@ export function ProfileView({
                 {listKind === 'followers' ? 'Followers' : 'Following'}
               </MicroLabel>
               <button
+                ref={listCloseRef}
                 type="button"
                 onClick={() => setListKind(null)}
                 className="text-[11px] uppercase tracking-[0.12em] text-[#ff9142]"
@@ -600,7 +670,7 @@ export function ProfileView({
                     {formatTimestamp(tweet.createdAt)}
                   </time>
                 </div>
-                {tweet.body.trim() ? (
+                {(tweet.body ?? '').trim() ? (
                   <p className="mt-2 whitespace-pre-wrap text-[14px] leading-[1.4] text-text-primary">
                     {tweet.body}
                   </p>

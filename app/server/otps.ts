@@ -6,7 +6,11 @@ import {
   type OtpStore,
 } from '../shared/schemas.ts'
 import { hashSecret, verifySecret } from './crypto.ts'
-import { atomicWriteJson, DEFAULT_DATA_DIR, readJsonFile } from './jsonStore.ts'
+import {
+  DEFAULT_DATA_DIR,
+  mutateJsonFile,
+  readJsonFile,
+} from './jsonStore.ts'
 
 function otpsPath(): string {
   return process.env.OTPS_STORE_PATH ?? path.join(DEFAULT_DATA_DIR, 'otps.json')
@@ -14,71 +18,96 @@ function otpsPath(): string {
 
 const emptyStore = (): OtpStore => ({ otps: [] })
 
-async function readStore(): Promise<OtpStore> {
-  return readJsonFile(otpsPath(), emptyStore(), (raw) => {
-    const parsed = otpStoreSchema.safeParse(raw)
-    if (!parsed.success) throw new Error('OTP store is corrupt or invalid.')
-    return parsed.data
-  })
+function parseStore(raw: unknown): OtpStore {
+  const parsed = otpStoreSchema.safeParse(raw)
+  if (!parsed.success) throw new Error('OTP store is corrupt or invalid.')
+  return parsed.data
 }
 
-async function writeStore(store: OtpStore): Promise<void> {
-  await atomicWriteJson(otpsPath(), store)
+async function readStore(): Promise<OtpStore> {
+  return readJsonFile(otpsPath(), emptyStore(), parseStore)
 }
 
 export async function upsertOtp(email: string, code: string): Promise<void> {
-  const store = await readStore()
-  const normalized = email.toLowerCase()
-  const record: OtpRecord = {
-    email: normalized,
-    codeHash: await hashSecret(code),
-    expiresAt: new Date(Date.now() + OTP_TTL_MS).toISOString(),
-    attempts: 0,
-  }
-  const otps = store.otps.filter((item) => item.email !== normalized)
-  otps.push(record)
-  await writeStore({ otps })
+  const codeHash = await hashSecret(code)
+  await mutateJsonFile(otpsPath(), emptyStore(), parseStore, (store) => {
+    const normalized = email.toLowerCase()
+    const record: OtpRecord = {
+      email: normalized,
+      codeHash,
+      expiresAt: new Date(Date.now() + OTP_TTL_MS).toISOString(),
+      attempts: 0,
+    }
+    const otps = store.otps.filter((item) => item.email !== normalized)
+    otps.push(record)
+    return { store: { otps }, result: undefined }
+  })
 }
 
 export async function consumeOtp(
   email: string,
   code: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const store = await readStore()
+  // Read outside lock only to short-circuit missing; mutation is locked.
+  const preview = await readStore()
   const normalized = email.toLowerCase()
-  const index = store.otps.findIndex((item) => item.email === normalized)
-
-  if (index === -1) {
+  const previewIndex = preview.otps.findIndex((item) => item.email === normalized)
+  if (previewIndex === -1) {
     return { ok: false, reason: 'No verification code found. Request a new one.' }
   }
 
-  const record = store.otps[index]
+  return mutateJsonFile(otpsPath(), emptyStore(), parseStore, async (store) => {
+    const index = store.otps.findIndex((item) => item.email === normalized)
 
-  if (Date.now() > Date.parse(record.expiresAt)) {
-    const otps = store.otps.filter((_, i) => i !== index)
-    await writeStore({ otps })
-    return { ok: false, reason: 'Verification code expired. Request a new one.' }
-  }
-
-  if (record.attempts >= OTP_MAX_ATTEMPTS) {
-    const otps = store.otps.filter((_, i) => i !== index)
-    await writeStore({ otps })
-    return { ok: false, reason: 'Too many attempts. Request a new code.' }
-  }
-
-  const valid = await verifySecret(code, record.codeHash)
-  if (!valid) {
-    const updated = {
-      ...record,
-      attempts: record.attempts + 1,
+    if (index === -1) {
+      return {
+        store,
+        result: {
+          ok: false as const,
+          reason: 'No verification code found. Request a new one.',
+        },
+      }
     }
-    const otps = [...store.otps]
-    otps[index] = updated
-    await writeStore({ otps })
-    return { ok: false, reason: 'Invalid verification code.' }
-  }
 
-  const otps = store.otps.filter((_, i) => i !== index)
-  await writeStore({ otps })
-  return { ok: true }
+    const record = store.otps[index]
+
+    if (Date.now() > Date.parse(record.expiresAt)) {
+      const otps = store.otps.filter((_, i) => i !== index)
+      return {
+        store: { otps },
+        result: {
+          ok: false as const,
+          reason: 'Verification code expired. Request a new one.',
+        },
+      }
+    }
+
+    if (record.attempts >= OTP_MAX_ATTEMPTS) {
+      const otps = store.otps.filter((_, i) => i !== index)
+      return {
+        store: { otps },
+        result: {
+          ok: false as const,
+          reason: 'Too many attempts. Request a new code.',
+        },
+      }
+    }
+
+    const valid = await verifySecret(code, record.codeHash)
+    if (!valid) {
+      const updated = {
+        ...record,
+        attempts: record.attempts + 1,
+      }
+      const otps = [...store.otps]
+      otps[index] = updated
+      return {
+        store: { otps },
+        result: { ok: false as const, reason: 'Invalid verification code.' },
+      }
+    }
+
+    const otps = store.otps.filter((_, i) => i !== index)
+    return { store: { otps }, result: { ok: true as const } }
+  })
 }

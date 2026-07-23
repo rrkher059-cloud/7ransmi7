@@ -39,7 +39,7 @@ export function TweetFeed({
   return (
     <Panel label={label} elevated>
       <p className="mb-4 text-[11px] uppercase tracking-[0.12em] text-text-muted">
-        Your posts + 5 random signals · auto-purge at 60 minutes
+        Your posts + 5 random signals · auto-purge at 24 hours
       </p>
 
       {error ? (

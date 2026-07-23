@@ -27,8 +27,6 @@ dist-ssr
 *.sw?
 
 # Local persistence (keep folder via .gitkeep)
-data/tweets.json
-data/users.json
-data/otps.json
+data/*
 !data/.gitkeep
-
+*.tmp

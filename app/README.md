@@ -1,32 +1,50 @@
-# React + TypeScript + Vite
+# 7RANSMI7 (`app/`)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Short-lived social network: Vite + React client, Hono API, shared Zod schemas, JSON file stores.
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+cd app
+npm install
+cp .env.example .env   # then edit secrets
+npm run dev            # Vite + API (see package.json scripts)
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+From the repo root you can also use `npm run dev` (delegates to `app/`).
+
+## Environment
+
+See `.env.example`. Important:
+
+| Variable | Notes |
+|---|---|
+| `SESSION_SECRET` | **Required in production** (min 16 chars). Dev/test may use a local default. |
+| `VITE_API_BASE_URL` | Frontend API origin (no trailing slash). |
+| `ALLOWED_ORIGINS` | Comma-separated CORS / CSRF allowlist. |
+| `TRUST_PROXY` | Set when behind a trusted reverse proxy (or rely on `RENDER`). |
+| `RESEND_API_KEY` | Optional; without it, OTP codes log to the API console (non-production only). |
+| `OPENROUTER_API_KEY` | Optional; enables AI assist / companion / semantic search. |
+
+## Architecture
+
+```
+app/
+  src/       React client (Vite)
+  server/    Hono API + JSON stores (tweets, users, otps, follows, messages, notifications, blocks)
+  shared/    Zod schemas + constants shared by client and server
+  data/      Runtime JSON files (gitignored except .gitkeep)
+```
+
+Auth: email OTP + password, `httpOnly` signed session cookie. Mutating browser requests are origin/referer-checked when those headers are present.
+
+## Deploy
+
+- **Client:** GitHub Pages (static Vite build). Point `VITE_API_BASE_URL` at the API.
+- **API:** Render (or similar Node host). Set `SESSION_SECRET`, `ALLOWED_ORIGINS`, and optional Resend/OpenRouter keys. Enable `TRUST_PROXY` / rely on `RENDER` for rate-limit IP headers.
+
+## Security notes
+
+- Never ship without a strong `SESSION_SECRET` in production.
+- Runtime data under `data/` is private — keep it out of git.
+- Explore suggestions and user search require a signed-in session.

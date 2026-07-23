@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from './app.ts'
+import { clearRateLimitBuckets } from './rateLimit.ts'
 import { TWEET_MAX_CHARS } from '../shared/constants.ts'
 
 async function withTempStores() {
@@ -56,6 +57,7 @@ describe('API edge cases', () => {
   const app = createApp()
 
   beforeEach(async () => {
+    clearRateLimitBuckets()
     tempDir = await withTempStores()
   })
 

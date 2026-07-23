@@ -131,6 +131,14 @@ export default function BorderGlow({
   fillOpacity = 0.5,
 }: BorderGlowProps) {
   const cardRef = useRef<HTMLDivElement>(null)
+  const pendingPointer = useRef<{ x: number; y: number } | null>(null)
+  const rafId = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (rafId.current != null) cancelAnimationFrame(rafId.current)
+    }
+  }, [])
 
   const getCenterOfElement = useCallback((el: HTMLElement) => {
     const { width, height } = el.getBoundingClientRect()
@@ -174,11 +182,18 @@ export default function BorderGlow({
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
 
-      const edge = getEdgeProximity(card, x, y)
-      const angle = getCursorAngle(card, x, y)
-
-      card.style.setProperty('--edge-proximity', `${(edge * 100).toFixed(3)}`)
-      card.style.setProperty('--cursor-angle', `${angle.toFixed(3)}deg`)
+      pendingPointer.current = { x, y }
+      if (rafId.current != null) return
+      rafId.current = requestAnimationFrame(() => {
+        rafId.current = null
+        const next = pendingPointer.current
+        const el = cardRef.current
+        if (!next || !el) return
+        const edge = getEdgeProximity(el, next.x, next.y)
+        const angle = getCursorAngle(el, next.x, next.y)
+        el.style.setProperty('--edge-proximity', `${(edge * 100).toFixed(3)}`)
+        el.style.setProperty('--cursor-angle', `${angle.toFixed(3)}deg`)
+      })
     },
     [getEdgeProximity, getCursorAngle],
   )

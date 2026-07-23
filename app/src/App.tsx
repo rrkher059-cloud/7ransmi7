@@ -9,13 +9,14 @@ import {
   commentTweet,
   deleteTweet,
   getMe,
+  healthCheck,
   listTweets,
   likeTweet,
   logout,
   postTweet,
   reactToTweet,
   repostTweet,
-  type PublicUser,
+  type PrivateUser,
   type Tweet,
 } from '@/lib/api'
 
@@ -40,7 +41,7 @@ const AUTH_PROMPTS: Record<string, string> = {
 }
 
 export default function App() {
-  const [user, setUser] = useState<PublicUser | null>(null)
+  const [user, setUser] = useState<PrivateUser | null>(null)
   const [sessionReady, setSessionReady] = useState(false)
   const [tweets, setTweets] = useState<Tweet[]>([])
   const [loading, setLoading] = useState(true)
@@ -75,16 +76,22 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const next = await listTweets()
+      const { tweets: next } = await listTweets()
       setTweets(next.filter((tweet) => !isExpired(tweet)))
       setFeedError(null)
       setOnline(true)
     } catch {
-      setFeedError('Downlink failed. Is the API online on :8787?')
+      setFeedError('Downlink failed. Is the API online?')
       setOnline(false)
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  const pingHealth = useCallback(async () => {
+    const ok = await healthCheck()
+    setOnline(ok)
+    return ok
   }, [])
 
   useEffect(() => {
@@ -115,12 +122,14 @@ export default function App() {
   useEffect(() => {
     if (!sessionReady || surface !== 'app') return
     void refresh()
+    void pingHealth()
     const timer = window.setInterval(() => {
       setTweets((current) => current.filter((tweet) => !isExpired(tweet)))
       void refresh()
+      void pingHealth()
     }, 15_000)
     return () => window.clearInterval(timer)
-  }, [refresh, sessionReady, surface])
+  }, [pingHealth, refresh, sessionReady, surface])
 
   async function handlePost(input: { body: string; imageUrl?: string }) {
     if (!requireAuth('post')) return
@@ -271,7 +280,7 @@ export default function App() {
     setSurface('landing')
   }
 
-  function handleAuthenticated(next: PublicUser) {
+  function handleAuthenticated(next: PrivateUser) {
     setUser(next)
     setAuthOpen(false)
     setAuthPrompt(null)

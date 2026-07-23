@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from './app.ts'
+import { clearRateLimitBuckets } from './rateLimit.ts'
 import {
   loginSchema,
   requestCodeSchema,
@@ -59,6 +60,7 @@ describe('auth API', () => {
   const app = createApp()
 
   beforeEach(async () => {
+    clearRateLimitBuckets()
     tempDir = await withTempStores()
   })
 
@@ -132,11 +134,14 @@ describe('auth API', () => {
     const created = await signup.json()
     expect(created.user.handle).toBe('@pilot')
     expect(created.user.email).toBe(email)
+    expect(created.user.passwordHash).toBeUndefined()
 
     const me = await app.request('/api/auth/me', {
       headers: { Cookie: cookieFrom(signup) },
     })
     expect(me.status).toBe(200)
+    const meBody = await me.json()
+    expect(meBody.user.email).toBe(email)
 
     await app.request('/api/auth/logout', { method: 'POST' })
 
@@ -157,7 +162,7 @@ describe('auth API', () => {
     expect(loggedIn.user.handle).toBe('@pilot')
   })
 
-  it('rejects duplicate email on request-code after signup', async () => {
+  it('rejects duplicate email on request-code after signup without revealing', async () => {
     const email = 'dup@kuiper.test'
     await app.request('/api/auth/request-code', {
       method: 'POST',
@@ -180,6 +185,9 @@ describe('auth API', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
     })
-    expect(again.status).toBe(409)
+    expect(again.status).toBe(200)
+    const body = await again.json()
+    expect(body.ok).toBe(true)
+    expect(body.error).toBeUndefined()
   })
 })

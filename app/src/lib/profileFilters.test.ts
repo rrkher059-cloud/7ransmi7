@@ -11,6 +11,7 @@ function tweet(partial: Partial<Tweet> & Pick<Tweet, 'id' | 'body' | 'userId'>):
     createdAt: '2026-07-21T12:00:00.000Z',
     likes: 0,
     liked: false,
+    likedBy: [],
     reactions: [],
     comments: [],
     repostCount: 0,
@@ -42,7 +43,8 @@ describe('filterProfileTweets', () => {
       id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
       body: 'Someone else posted',
       userId: OTHER,
-      reactions: [{ emoji: '👍', userId: USER }],
+      likedBy: [USER],
+      liked: true,
     }),
     tweet({
       id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
@@ -87,7 +89,7 @@ describe('filterProfileTweets', () => {
     expect(result.map((t) => t.id)).toEqual(['cccccccc-cccc-cccc-cccc-cccccccccccc'])
   })
 
-  it('likes includes any posts the user reacted to', () => {
+  it('likes includes posts where likedBy contains the user', () => {
     const result = filterProfileTweets(catalog, USER, 'likes')
     expect(result.map((t) => t.id)).toEqual(['dddddddd-dddd-dddd-dddd-dddddddddddd'])
   })

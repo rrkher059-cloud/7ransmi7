@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { z } from 'zod'
-import { atomicWriteJson, DEFAULT_DATA_DIR, readJsonFile } from './jsonStore.ts'
+import {
+  DEFAULT_DATA_DIR,
+  mutateJsonFile,
+  readJsonFile,
+} from './jsonStore.ts'
+import { isBlockedEitherWay, listBlockedPeerIds } from './blocks.ts'
 import { getPublicUser } from './users.ts'
 import type { PublicUser } from '../shared/schemas.ts'
 
@@ -36,12 +41,14 @@ function messagesPath(): string {
 
 const emptyStore = (): DmStore => ({ messages: [] })
 
+function parseStore(raw: unknown): DmStore {
+  const parsed = dmStoreSchema.safeParse(raw)
+  if (!parsed.success) throw new Error('Messages store is corrupt or invalid.')
+  return parsed.data
+}
+
 async function readStore(): Promise<DmStore> {
-  return readJsonFile(messagesPath(), emptyStore(), (raw) => {
-    const parsed = dmStoreSchema.safeParse(raw)
-    if (!parsed.success) throw new Error('Messages store is corrupt or invalid.')
-    return parsed.data
-  })
+  return readJsonFile(messagesPath(), emptyStore(), parseStore)
 }
 
 function isParticipant(message: DmMessage, userId: string): boolean {
@@ -56,6 +63,7 @@ export async function listConversations(
   userId: string,
 ): Promise<DmConversation[]> {
   const store = await readStore()
+  const blocked = await listBlockedPeerIds(userId)
   const mine = store.messages
     .filter((message) => isParticipant(message, userId))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -63,6 +71,7 @@ export async function listConversations(
   const byPeer = new Map<string, DmMessage[]>()
   for (const message of mine) {
     const peerId = peerIdOf(message, userId)
+    if (blocked.has(peerId)) continue
     const list = byPeer.get(peerId) ?? []
     list.push(message)
     byPeer.set(peerId, list)
@@ -89,6 +98,10 @@ export async function getThread(
   userId: string,
   peerId: string,
 ): Promise<DmConversation | null> {
+  if (await isBlockedEitherWay(userId, peerId)) {
+    return null
+  }
+
   const peer = await getPublicUser(peerId)
   if (!peer) return null
 
@@ -144,16 +157,24 @@ export async function sendMessage(input: {
     throw error
   }
 
-  const store = await readStore()
-  const message: DmMessage = {
-    id: randomUUID(),
-    fromUserId: input.fromUserId,
-    toUserId: input.toUserId,
-    body: input.body.trim(),
-    createdAt: new Date().toISOString(),
+  if (await isBlockedEitherWay(input.fromUserId, input.toUserId)) {
+    const error = new Error('Cannot message this user.')
+    ;(error as Error & { status: number; code: string }).status = 403
+    ;(error as Error & { status: number; code: string }).code = 'BLOCKED'
+    throw error
   }
-  await atomicWriteJson(messagesPath(), {
-    messages: [...store.messages, message],
+
+  return mutateJsonFile(messagesPath(), emptyStore(), parseStore, (store) => {
+    const message: DmMessage = {
+      id: randomUUID(),
+      fromUserId: input.fromUserId,
+      toUserId: input.toUserId,
+      body: input.body.trim(),
+      createdAt: new Date().toISOString(),
+    }
+    return {
+      store: { messages: [...store.messages, message] },
+      result: message,
+    }
   })
-  return message
 }

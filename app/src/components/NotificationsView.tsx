@@ -59,7 +59,7 @@ export function NotificationsView({ onOpenProfile }: NotificationsViewProps) {
 
     async function load() {
       try {
-        const next = await listNotifications()
+        const { notifications: next } = await listNotifications()
         if (cancelled) return
         setItems(next)
         setError(null)

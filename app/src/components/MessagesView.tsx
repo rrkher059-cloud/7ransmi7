@@ -14,7 +14,7 @@ import {
   type DmMessage,
   type PublicUser,
 } from '@/lib/api'
-import { createTweetSchema } from '../../shared/schemas'
+import { sendMessageSchema } from '../../shared/schemas'
 import type { ProfilePeek } from '@/components/feed/TweetCard'
 
 type MessagesViewProps = {
@@ -137,11 +137,19 @@ export function MessagesView({
     event.preventDefault()
     if (!activePeerId) return
 
-    const parsed = createTweetSchema.safeParse({ body: draft })
+    if (draft.trim().length > TWEET_MAX_CHARS) {
+      setError('Message must be at most 280 characters.')
+      return
+    }
+
+    const parsed = sendMessageSchema.safeParse({
+      toUserId: activePeerId,
+      body: draft,
+    })
     if (!parsed.success) {
       const message =
         parsed.error.flatten().fieldErrors.body?.[0] ??
-        'Message failed validation.'
+        'Message must be at most 280 characters.'
       setError(message)
       return
     }

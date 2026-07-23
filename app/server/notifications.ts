@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { z } from 'zod'
-import { atomicWriteJson, DEFAULT_DATA_DIR, readJsonFile } from './jsonStore.ts'
+import {
+  DEFAULT_DATA_DIR,
+  mutateJsonFile,
+  readJsonFile,
+} from './jsonStore.ts'
 
 export const notificationTypeSchema = z.enum([
   'like',
@@ -30,6 +34,8 @@ const notificationStoreSchema = z.object({
 export type AppNotification = z.infer<typeof notificationSchema>
 type NotificationStore = z.infer<typeof notificationStoreSchema>
 
+const PER_USER_CAP = 200
+
 function storePath(): string {
   return (
     process.env.NOTIFICATIONS_STORE_PATH ??
@@ -39,18 +45,35 @@ function storePath(): string {
 
 const emptyStore = (): NotificationStore => ({ notifications: [] })
 
-async function readStore(): Promise<NotificationStore> {
-  return readJsonFile(storePath(), emptyStore(), (raw) => {
-    const parsed = notificationStoreSchema.safeParse(raw)
-    if (!parsed.success) {
-      throw new Error('Notifications store is corrupt or invalid.')
-    }
-    return parsed.data
-  })
+function parseStore(raw: unknown): NotificationStore {
+  const parsed = notificationStoreSchema.safeParse(raw)
+  if (!parsed.success) {
+    throw new Error('Notifications store is corrupt or invalid.')
+  }
+  return parsed.data
 }
 
-async function writeStore(store: NotificationStore): Promise<void> {
-  await atomicWriteJson(storePath(), store)
+async function readStore(): Promise<NotificationStore> {
+  return readJsonFile(storePath(), emptyStore(), parseStore)
+}
+
+/** Keep the newest PER_USER_CAP notifications per recipient. */
+function capPerRecipient(
+  notifications: AppNotification[],
+): AppNotification[] {
+  const byRecipient = new Map<string, AppNotification[]>()
+  for (const item of notifications) {
+    const list = byRecipient.get(item.recipientId) ?? []
+    list.push(item)
+    byRecipient.set(item.recipientId, list)
+  }
+  const capped: AppNotification[] = []
+  for (const list of byRecipient.values()) {
+    list.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    capped.push(...list.slice(0, PER_USER_CAP))
+  }
+  capped.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+  return capped
 }
 
 export async function pushNotification(input: {
@@ -63,43 +86,74 @@ export async function pushNotification(input: {
 }): Promise<AppNotification | null> {
   if (input.recipientId === input.actorId) return null
 
-  const store = await readStore()
-  const notification: AppNotification = {
-    id: randomUUID(),
-    recipientId: input.recipientId,
-    type: input.type,
-    actorId: input.actorId,
-    actorHandle: input.actorHandle,
-    tweetId: input.tweetId ?? null,
-    body: input.body ?? null,
-    createdAt: new Date().toISOString(),
-    read: false,
-  }
+  return mutateJsonFile(storePath(), emptyStore(), parseStore, (store) => {
+    const notification: AppNotification = {
+      id: randomUUID(),
+      recipientId: input.recipientId,
+      type: input.type,
+      actorId: input.actorId,
+      actorHandle: input.actorHandle,
+      tweetId: input.tweetId ?? null,
+      body: input.body ?? null,
+      createdAt: new Date().toISOString(),
+      read: false,
+    }
 
-  const next = [notification, ...store.notifications].slice(0, 200)
-  await writeStore({ notifications: next })
-  return notification
+    const next = capPerRecipient([notification, ...store.notifications])
+    return { store: { notifications: next }, result: notification }
+  })
 }
 
 export async function listNotificationsForUser(
   userId: string,
-): Promise<AppNotification[]> {
+  options?: { limit?: number; cursor?: string },
+): Promise<{ notifications: AppNotification[]; nextCursor: string | null }> {
+  const limit = Math.min(Math.max(options?.limit ?? 60, 1), 100)
+  const cursor = options?.cursor?.trim() || undefined
   const store = await readStore()
-  return store.notifications
+  const all = store.notifications
     .filter((item) => item.recipientId === userId)
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    .slice(0, 60)
+
+  let start = 0
+  if (cursor) {
+    const byId = all.findIndex((item) => item.id === cursor)
+    if (byId >= 0) {
+      start = byId + 1
+    } else {
+      const cursorTime = Date.parse(cursor)
+      if (!Number.isNaN(cursorTime)) {
+        const idx = all.findIndex(
+          (item) => Date.parse(item.createdAt) < cursorTime,
+        )
+        start = idx >= 0 ? idx : all.length
+      }
+    }
+  }
+
+  const notifications = all.slice(start, start + limit)
+  const hasMore = start + notifications.length < all.length
+  const last = notifications[notifications.length - 1]
+  return {
+    notifications,
+    nextCursor: hasMore && last ? last.createdAt : null,
+  }
 }
 
 export async function markNotificationsRead(userId: string): Promise<void> {
-  const store = await readStore()
-  let changed = false
-  const notifications = store.notifications.map((item) => {
-    if (item.recipientId === userId && !item.read) {
-      changed = true
-      return { ...item, read: true }
+  await mutateJsonFile(storePath(), emptyStore(), parseStore, (store) => {
+    let changed = false
+    const notifications = store.notifications.map((item) => {
+      if (item.recipientId === userId && !item.read) {
+        changed = true
+        return { ...item, read: true }
+      }
+      return item
+    })
+    return {
+      store: changed ? { notifications } : store,
+      result: undefined,
+      dirty: changed,
     }
-    return item
   })
-  if (changed) await writeStore({ notifications })
 }

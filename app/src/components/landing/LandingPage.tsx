@@ -25,6 +25,7 @@ const EMPTY_STATS: PlatformStats = {
 }
 
 function useCountUp(target: number, active: boolean): string {
+  const safeTarget = Number.isFinite(target) ? target : 0
   const [value, setValue] = useState(0)
 
   useEffect(() => {
@@ -40,13 +41,13 @@ function useCountUp(target: number, active: boolean): string {
     function tick(now: number) {
       const t = Math.min(1, (now - start) / duration)
       const eased = 1 - (1 - t) ** 3
-      setValue(from + (target - from) * eased)
+      setValue(from + (safeTarget - from) * eased)
       if (t < 1) frame = requestAnimationFrame(tick)
     }
 
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [active, target])
+  }, [active, safeTarget])
 
   return Math.round(value).toLocaleString('en-US')
 }

@@ -1,11 +1,12 @@
+import { useEffect, useRef } from 'react'
 import { AuthPanel, type AuthMode } from '@/components/auth/AuthPanel'
-import type { PublicUser } from '@/lib/api'
+import type { PrivateUser } from '@/lib/api'
 
 type AuthModalProps = {
   mode: AuthMode
   prompt?: string | null
   onClose: () => void
-  onAuthenticated: (user: PublicUser) => void
+  onAuthenticated: (user: PrivateUser) => void
 }
 
 /** Overlay auth dialog — keeps the home feed visible behind it. */
@@ -15,6 +16,21 @@ export function AuthModal({
   onClose,
   onAuthenticated,
 }: AuthModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    const root = panelRef.current
+    const focusable = root?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    )
+    focusable?.focus()
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4"
@@ -24,6 +40,7 @@ export function AuthModal({
       onClick={onClose}
     >
       <div
+        ref={panelRef}
         className="relative w-full max-w-md"
         onClick={(event) => event.stopPropagation()}
       >

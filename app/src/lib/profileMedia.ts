@@ -1,4 +1,5 @@
 const STORAGE_PREFIX = 'transmit_profile_media:'
+const BIO_PREFIX = 'transmit_profile_bio:'
 
 export type ProfileMedia = {
   avatarUrl: string | null
@@ -7,6 +8,10 @@ export type ProfileMedia = {
 
 function storageKey(userId: string): string {
   return `${STORAGE_PREFIX}${userId}`
+}
+
+function bioKey(userId: string): string {
+  return `${BIO_PREFIX}${userId}`
 }
 
 export function loadProfileMedia(userId: string): ProfileMedia {
@@ -29,6 +34,22 @@ export function saveProfileMedia(userId: string, media: ProfileMedia): void {
     window.dispatchEvent(
       new CustomEvent('transmit-profile-media', { detail: { userId } }),
     )
+  } catch {
+    // quota / private mode — ignore
+  }
+}
+
+export function loadProfileBio(userId: string): string {
+  try {
+    return window.localStorage.getItem(bioKey(userId)) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function saveProfileBio(userId: string, bio: string): void {
+  try {
+    window.localStorage.setItem(bioKey(userId), bio)
   } catch {
     // quota / private mode — ignore
   }

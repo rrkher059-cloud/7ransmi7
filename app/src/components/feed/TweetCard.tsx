@@ -64,7 +64,7 @@ export function TweetCard({
 
   function openAuthor() {
     if (!tweet.userId) return
-    onOpenProfile?.({ id: tweet.userId, handle: tweet.handle })
+    onOpenProfile?.({ id: tweet.userId, handle: tweet.handle ?? 'unknown' })
   }
 
   async function handleCommentSubmit(event: FormEvent<HTMLFormElement>) {
@@ -96,7 +96,7 @@ export function TweetCard({
         <div className="flex min-w-0 items-start gap-3">
           <UserAvatar
             userId={tweet.userId ?? tweet.id}
-            handle={tweet.handle}
+            handle={tweet.handle ?? 'unknown'}
             size={44}
             onClick={tweet.userId && onOpenProfile ? openAuthor : undefined}
           />
@@ -112,7 +112,7 @@ export function TweetCard({
               }`}
               style={{ borderRadius: 0 }}
             >
-              {tweet.handle}
+              {tweet.handle ?? 'unknown'}
             </button>
           </div>
         </div>
@@ -122,15 +122,15 @@ export function TweetCard({
             dateTime={tweet.createdAt}
             className="text-[12px] uppercase tracking-[0.12em] text-text-muted"
           >
-            {formatTimestamp(tweet.createdAt)}
+            {formatTimestamp(tweet.createdAt ?? '')}
           </time>
           <p className="text-[11px] uppercase tracking-[0.12em] text-accent">
-            {formatExpiresIn(tweet.createdAt)}
+            {formatExpiresIn(tweet.createdAt ?? '')}
           </p>
         </div>
       </div>
 
-      {tweet.body.trim() ? (
+      {(tweet.body ?? '').trim() ? (
         <div className="flex flex-col gap-2">
           <MicroLabel>Payload</MicroLabel>
           <p className="whitespace-pre-wrap break-words text-[15px] leading-[1.4] text-text-primary">

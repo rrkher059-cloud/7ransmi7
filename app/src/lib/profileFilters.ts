@@ -10,7 +10,10 @@ export type ProfileSubTab =
 const REPLY_PATTERN = /^@[\w]+/u
 
 function isReply(tweet: Tweet): boolean {
-  return Boolean(tweet.replyToId) || REPLY_PATTERN.test(tweet.body.trim())
+  return (
+    Boolean(tweet.replyToId) ||
+    REPLY_PATTERN.test((tweet.body ?? '').trim())
+  )
 }
 
 /** Pure filter used by ProfileView — covered by QA unit tests. */
@@ -34,9 +37,13 @@ export function filterProfileTweets(
         (tweet) => (tweet.reactions?.length ?? 0) > 0 || tweet.likes > 0,
       )
     case 'likes':
-      return tweets.filter((tweet) =>
-        (tweet.reactions ?? []).some((reaction) => reaction.userId === userId),
-      )
+      return tweets.filter((tweet) => {
+        if (Array.isArray(tweet.likedBy)) {
+          return tweet.likedBy.includes(userId)
+        }
+        // Legacy viewer flag when likedBy is absent (self timeline).
+        return Boolean(tweet.liked)
+      })
     default:
       return mine
   }

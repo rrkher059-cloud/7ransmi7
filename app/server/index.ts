@@ -1,90 +1,46 @@
-import { Hono } from 'hono';
-import { serve } from '@hono/node-server';
-import { cors } from 'hono/cors';
+import 'dotenv/config'
+import { serve } from '@hono/node-server'
+import { createApp } from './app.ts'
+import {
+  cleanupStaleTempFiles,
+  DEFAULT_DATA_DIR,
+} from './jsonStore.ts'
+import { pruneRateLimitBuckets } from './rateLimit.ts'
+import { assertSessionSecretConfigured } from './session.ts'
+import { purgeExpired } from './store.ts'
 
-const app = new Hono();
+assertSessionSecretConfigured()
 
-app.use('*', cors({
-  origin: ['https://rrkher059-cloud.github.io', 'http://localhost:5173', 'http://localhost:8787'],
-  credentials: true,
-}));
+if (
+  process.env.AUTH_TEST_OTP &&
+  (process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER))
+) {
+  throw new Error('AUTH_TEST_OTP must not be set in production.')
+}
 
-// Root health check
-app.get('/', (c) => c.text('Chirp API is live and running!'));
-app.get('/api/health', (c) => c.json({ status: 'ok' }));
+void cleanupStaleTempFiles(DEFAULT_DATA_DIR).catch((error) => {
+  console.error('cleanupStaleTempFiles failed', error)
+})
 
-const mockUser = {
-  id: '1',
-  username: 'rrkher059-cloud',
-  handle: 'rrkher059-cloud',
-  name: 'Developer',
-  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Developer',
-  avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Developer',
-  banner: '',
-  bannerUrl: '',
-  bio: 'Building 7ransmi7',
-  location: 'Earth',
-  website: 'https://rrkher059-cloud.github.io/7ransmi7/',
-  joinedDate: '2026-01-01',
-  createdAt: '2026-01-01T00:00:00.000Z',
-  followersCount: 0,
-  followingCount: 0,
-  tweetsCount: 1,
-  postsCount: 1
-};
+const app = createApp()
 
-const mockTweet = {
-  id: '1',
-  text: 'Welcome to 7ransmi7! The network is live.',
-  content: 'Welcome to 7ransmi7! The network is live.',
-  createdAt: '2026-07-22T22:00:00.000Z',
-  date: '2026-07-22',
-  timestamp: 'Just now',
-  likesCount: 0,
-  retweetsCount: 0,
-  repliesCount: 0,
-  likes: 0,
-  retweets: 0,
-  replies: 0,
-  user: mockUser,
-  author: mockUser
-};
+app.get('/', (c) =>
+  c.json({
+    ok: true,
+    service: '7ransmi7-api',
+    health: '/api/health',
+  }),
+)
 
-// Auth endpoints
-app.get('/api/auth/me', (c) => c.json({ user: mockUser, ...mockUser }));
-app.post('/api/auth/login', (c) => c.json({ success: true, token: 'mock-jwt-token', user: mockUser }));
-app.post('/api/auth/signup', (c) => c.json({ success: true, token: 'mock-jwt-token', user: mockUser }));
-app.post('/api/auth/logout', (c) => c.json({ success: true }));
+const port = Number(process.env.PORT ?? 8787)
 
-// Stats endpoint
-app.get('/api/stats', (c) => c.json({
-  users: 1,
-  posts: 1,
-  tweets: 1,
-  totalUsers: 1,
-  totalPosts: 1,
-  activeUsers: 1,
-  stats: {
-    users: 1,
-    posts: 1,
-    tweets: 1
-  }
-}));
+serve({ fetch: app.fetch, port }, (info) => {
+  console.log(`API listening on http://localhost:${info.port}`)
+})
 
-// Feed & Explore endpoints
-app.get('/api/tweets', (c) => c.json([mockTweet]));
-app.post('/api/tweets', (c) => c.json(mockTweet));
-app.get('/api/explore/trending', (c) => c.json([
-  { id: '1', category: 'Tech', tag: '#7ransmi7', name: '#7ransmi7', tweetsCount: 100, posts: 100 }
-]));
-app.get('/api/explore/suggestions', (c) => c.json([mockUser]));
-app.get('/api/messages', (c) => c.json([]));
-app.get('/api/notifications', (c) => c.json([]));
-app.get('/api/ai/status', (c) => c.json({ status: 'active' }));
-
-const port = Number(process.env.PORT) || 8787;
-
-serve({
-  fetch: app.fetch,
-  port
-});
+setInterval(() => {
+  void purgeExpired().catch((error) => {
+    console.error('purgeExpired failed', error)
+  })
+  pruneRateLimitBuckets()
+}, 30_000)

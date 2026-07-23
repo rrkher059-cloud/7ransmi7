@@ -37,11 +37,24 @@
   overflow: visible;
 }
 
+.line-sidebar__item-wrap {
+  position: relative;
+  list-style: none;
+}
+
 .line-sidebar__item {
   position: relative;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
   cursor: pointer;
   pointer-events: auto !important;
-  padding: 4px 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
 
 .line-sidebar__item::before {
