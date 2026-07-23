@@ -92,4 +92,31 @@ describe('user schemas', () => {
     })
     expect(result.success).toBe(false)
   })
+
+  it('rejects passwords shorter than 10 characters', () => {
+    const result = signupSchema.safeParse({
+      email: 'a@b.co',
+      password: 'short1abc',
+      handle: 'ops',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects passwords without a number', () => {
+    const result = signupSchema.safeParse({
+      email: 'a@b.co',
+      password: 'longpassword',
+      handle: 'ops',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('accepts a password with 10+ characters and a number', () => {
+    const result = signupSchema.safeParse({
+      email: 'a@b.co',
+      password: 'securepass1',
+      handle: 'ops',
+    })
+    expect(result.success).toBe(true)
+  })
 })

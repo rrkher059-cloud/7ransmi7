@@ -28,7 +28,7 @@ describe('auth schemas', () => {
     expect(
       signupSchema.safeParse({
         email: 'not-an-email',
-        password: 'securepass',
+        password: 'securepass1',
         handle: 'ops',
       }).success,
     ).toBe(false)
@@ -72,7 +72,7 @@ describe('auth API', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: 'not-an-email',
-        password: 'securepass',
+        password: 'securepass1',
         handle: 'lone',
       }),
     })
@@ -89,7 +89,7 @@ describe('auth API', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email,
-        password: 'securepass',
+        password: 'securepass1',
         handle: 'pilot',
       }),
     })
@@ -118,7 +118,7 @@ describe('auth API', () => {
     const login = await app.request('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: 'securepass' }),
+      body: JSON.stringify({ email, password: 'securepass1' }),
     })
     expect(login.status).toBe(200)
     const loggedIn = await login.json()
@@ -132,7 +132,7 @@ describe('auth API', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email,
-        password: 'securepass',
+        password: 'securepass1',
         handle: 'dup',
       }),
     })
@@ -143,7 +143,7 @@ describe('auth API', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email,
-        password: 'securepass',
+        password: 'securepass1',
         handle: 'dup2',
       }),
     })

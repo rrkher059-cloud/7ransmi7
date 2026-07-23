@@ -8,6 +8,7 @@ import {
   signup,
   type PrivateUser,
 } from '@/lib/api'
+import { PASSWORD_MIN_LENGTH } from '../../shared/constants'
 
 export type AuthMode = 'login' | 'signup'
 
@@ -132,11 +133,13 @@ export function AuthPanel({
             <input
               type="password"
               required
-              minLength={8}
+              minLength={PASSWORD_MIN_LENGTH}
+              pattern=".*\d.*"
+              title={`At least ${PASSWORD_MIN_LENGTH} characters and include a number`}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className={fieldClass}
-              placeholder="Min 8 characters"
+              placeholder={`Min ${PASSWORD_MIN_LENGTH} characters, include a number`}
               disabled={busy}
               autoComplete="new-password"
             />

@@ -48,6 +48,7 @@ const passwordSchema = z
     message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
   })
   .max(128, { message: 'Password must be at most 128 characters.' })
+  .regex(/\d/, { message: 'Password must contain a number.' })
   .refine((value) => !COMMON_PASSWORDS.has(value.toLowerCase()), {
     message: 'Choose a less common password.',
   })

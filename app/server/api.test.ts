@@ -34,7 +34,7 @@ async function signupSession(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email,
-      password: 'securepass',
+      password: 'securepass1',
       handle,
     }),
   })
