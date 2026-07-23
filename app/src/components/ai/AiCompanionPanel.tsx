@@ -6,6 +6,7 @@ import {
   aiCompanion,
   ApiClientError,
   type CompanionChatMessage,
+  type Tweet,
 } from '@/lib/api'
 
 type AiCompanionPanelProps = {
@@ -13,6 +14,8 @@ type AiCompanionPanelProps = {
   onToggle: () => void
   signedIn: boolean
   onRequireAuth?: () => void
+  /** Active on-screen feed posts for companion context. */
+  feedPosts?: Tweet[]
 }
 
 const QUICK_PROMPTS = [
@@ -26,6 +29,7 @@ export function AiCompanionPanel({
   onToggle,
   signedIn,
   onRequireAuth,
+  feedPosts = [],
 }: AiCompanionPanelProps) {
   const inputId = useId()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -48,12 +52,18 @@ export function AiCompanionPanel({
     }
 
     const history = messages.slice(-8)
+    const feedData = feedPosts.slice(0, 24).map((tweet) => ({
+      handle: tweet.handle,
+      body: tweet.body,
+      tags: tweet.tags?.length ? tweet.tags : undefined,
+      likes: tweet.likes,
+    }))
     setMessages((current) => [...current, { role: 'user', content: message }])
     setDraft('')
     setBusy(true)
     setError(null)
     try {
-      const reply = await aiCompanion(message, history)
+      const reply = await aiCompanion(message, history, feedData)
       setMessages((current) => [
         ...current,
         { role: 'assistant', content: reply },

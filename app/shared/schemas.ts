@@ -215,6 +215,13 @@ export const aiAssistSchema = z.object({
   mode: z.enum(ASSIST_MODES),
 })
 
+export const companionFeedPostSchema = z.object({
+  handle: z.string().min(1).max(33),
+  body: z.string().max(TWEET_MAX_CHARS),
+  tags: z.array(z.string().min(1).max(32)).max(4).optional(),
+  likes: z.number().int().nonnegative().optional(),
+})
+
 export const aiCompanionSchema = z.object({
   message: z
     .string()
@@ -230,6 +237,8 @@ export const aiCompanionSchema = z.object({
     )
     .max(12)
     .optional(),
+  /** Active on-screen feed posts from the client (preferred over server refetch). */
+  feedData: z.array(companionFeedPostSchema).max(24).optional(),
 })
 
 export const aiSearchSchema = z.object({
@@ -272,6 +281,7 @@ export type LikeTweetInput = z.infer<typeof likeTweetSchema>
 export type ReactTweetInput = z.infer<typeof reactTweetSchema>
 export type AiAssistInput = z.infer<typeof aiAssistSchema>
 export type AiCompanionInput = z.infer<typeof aiCompanionSchema>
+export type CompanionFeedPost = z.infer<typeof companionFeedPostSchema>
 export type AiSearchInput = z.infer<typeof aiSearchSchema>
 export type Reaction = z.infer<typeof reactionSchema>
 export type Comment = z.infer<typeof commentSchema>

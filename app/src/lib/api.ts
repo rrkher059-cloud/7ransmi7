@@ -404,14 +404,22 @@ export type CompanionChatMessage = {
   content: string
 }
 
+export type CompanionFeedPost = {
+  handle: string
+  body: string
+  tags?: string[]
+  likes?: number
+}
+
 export async function aiCompanion(
   message: string,
   history?: CompanionChatMessage[],
+  feedData?: CompanionFeedPost[],
 ): Promise<string> {
   const response = await apiFetch('/api/ai/companion', {
     method: 'POST',
     headers: jsonHeaders,
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({ message, history, feedData }),
   })
   const data = await parseResponse<{ reply: string }>(response)
   return String(data.reply ?? '')

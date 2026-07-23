@@ -324,6 +324,7 @@ export function MainLayout({
               onToggle={() => setCompanionOpen((current) => !current)}
               signedIn={!isGuest}
               onRequireAuth={() => onRequireAuth?.('default')}
+              feedPosts={feed.tweets}
             />
           </div>
         </div>
@@ -338,6 +339,7 @@ export function MainLayout({
               onToggle={() => setCompanionOpen(false)}
               signedIn={!isGuest}
               onRequireAuth={() => onRequireAuth?.('default')}
+              feedPosts={feed.tweets}
             />
           </div>
         ) : (

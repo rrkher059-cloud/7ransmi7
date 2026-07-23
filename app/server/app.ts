@@ -504,14 +504,25 @@ export function createApp() {
       if (limited) return limited
 
       const payload = aiCompanionSchema.parse(await c.req.json())
-      const feed = await getFeedForUser(user.id)
+      const clientFeed = payload.feedData
+      const feedContext =
+        clientFeed && clientFeed.length > 0
+          ? clientFeed.slice(0, 24).map((post) => ({
+              handle: post.handle,
+              body: post.body,
+              tags: post.tags,
+              likes: post.likes,
+            }))
+          : (await getFeedForUser(user.id)).slice(0, 24).map((tweet) => ({
+              handle: tweet.handle,
+              body: tweet.body,
+              tags: tweet.tags,
+              likes: tweet.likes,
+            }))
       const reply = await companionReply({
         message: payload.message,
         history: payload.history,
-        feedContext: feed.slice(0, 12).map((tweet) => ({
-          handle: tweet.handle,
-          body: tweet.body,
-        })),
+        feedContext,
       })
       return c.json({ reply })
     } catch (error) {
