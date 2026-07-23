@@ -8,6 +8,7 @@ import {
   type CompanionChatMessage,
   type Tweet,
 } from '@/lib/api'
+import { APP_NAME, APP_VERSION } from '../../../shared/constants'
 
 type AiCompanionPanelProps = {
   open: boolean
@@ -21,7 +22,7 @@ type AiCompanionPanelProps = {
 const QUICK_PROMPTS = [
   'Summarize the top posts on my feed',
   'What topics are active right now?',
-  'How do I post and explore on 7RANSMI7?',
+  `How do I post and explore on ${APP_NAME} ${APP_VERSION}?`,
 ]
 
 export function AiCompanionPanel({

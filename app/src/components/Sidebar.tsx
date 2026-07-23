@@ -1,6 +1,7 @@
 import LineSidebar from '@/components/LineSidebar'
 import { MicroLabel } from '@/components/ui/MicroLabel'
 import { GlowButton } from '@/components/ui/GlowButton'
+import { APP_NAME, APP_VERSION } from '../../shared/constants'
 
 export type AppTab =
   | 'home'
@@ -31,6 +32,7 @@ type SidebarProps = {
   onPrimaryAction: () => void
   onBrandClick?: () => void
   handle?: string | null
+  unreadCount?: number
 }
 
 export function Sidebar({
@@ -39,6 +41,7 @@ export function Sidebar({
   onPrimaryAction,
   onBrandClick,
   handle = null,
+  unreadCount = 0,
 }: SidebarProps) {
   return (
     <aside
@@ -57,12 +60,17 @@ export function Sidebar({
         <button
           type="button"
           onClick={onBrandClick}
-          className="mt-2 block w-full text-left text-[22px] uppercase tracking-[0.12em] text-[#eae7e1] transition-colors hover:text-[#ff9142]"
+          className="mt-2 flex w-full flex-wrap items-baseline gap-x-2 gap-y-1 text-left text-[22px] uppercase tracking-[0.12em] text-[#eae7e1] transition-colors hover:text-[#ff9142]"
           style={{ borderRadius: 0 }}
-          aria-label="7RANSMI7 home"
+          aria-label={`${APP_NAME} ${APP_VERSION} home`}
         >
-          <span className="bg-[#ff9142] px-1 text-[#1b1b1a]">X</span>
-          <span className="ml-2">7RANSMI7</span>
+          <span className="inline-flex min-w-0 items-baseline">
+            <span className="bg-[#ff9142] px-1 text-[#1b1b1a]">X</span>
+            <span className="ml-2">{APP_NAME}</span>
+          </span>
+          <span className="shrink-0 text-[11px] tracking-[0.1em] text-[#8a8783]">
+            {APP_VERSION}
+          </span>
         </button>
         {handle ? (
           <p className="mt-2 text-[12px] text-[#ff9142]">{handle}</p>
@@ -72,6 +80,7 @@ export function Sidebar({
       <div className="relative z-20 flex min-h-0 flex-1 flex-col overflow-visible px-2 py-2">
         <LineSidebar
           items={[...NAV_ITEMS]}
+          unreadCount={unreadCount}
           accentColor="#ff9142"
           textColor="#c4c4c4"
           markerColor="#4a4744"

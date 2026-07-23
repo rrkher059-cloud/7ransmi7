@@ -154,6 +154,66 @@ export async function listTweetsByUser(
   return annotateForViewer(mine, viewerId, tweets)
 }
 
+/** Tweets liked by this profile user (any author). */
+export async function listTweetsLikedByUser(
+  profileUserId: string,
+  viewerId?: string,
+): Promise<Tweet[]> {
+  const tweets = await purgeExpired()
+  const liked = tweets
+    .filter((tweet) => likedByOf(tweet).includes(profileUserId))
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+  return annotateForViewer(liked, viewerId, tweets)
+}
+
+/** Profile replies: (a) tweets authored by user with replyToId set, PLUS
+ *  (b) nested comments authored by user, projected as Tweet-shaped items
+ *  with id=comment.id, body/handle/userId/createdAt from comment,
+ *  replyToId=parentTweet.id, empty likes/reactions/comments, etc.
+ *  Sort newest first. Annotate for viewer like other list helpers.
+ */
+export async function listRepliesByUser(
+  profileUserId: string,
+  viewerId?: string,
+): Promise<Tweet[]> {
+  const tweets = await purgeExpired()
+
+  const replyTweets = tweets.filter(
+    (tweet) => tweet.userId === profileUserId && tweet.replyToId,
+  )
+
+  const commentReplies: Tweet[] = []
+  for (const parent of tweets) {
+    for (const comment of parent.comments ?? []) {
+      if (comment.userId !== profileUserId) continue
+      commentReplies.push({
+        id: comment.id,
+        body: comment.body,
+        handle: comment.handle,
+        userId: comment.userId,
+        createdAt: comment.createdAt,
+        likes: 0,
+        liked: false,
+        likedBy: [],
+        reactions: [],
+        imageUrl: null,
+        replyToId: parent.id,
+        repostOfId: null,
+        repostOfHandle: null,
+        comments: [],
+        repostCount: 0,
+        reposted: false,
+        tags: [],
+      })
+    }
+  }
+
+  const combined = [...replyTweets, ...commentReplies].sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+  )
+  return annotateForViewer(combined, viewerId, tweets)
+}
+
 export async function searchTweets(query: string): Promise<Tweet[]> {
   const tweets = await purgeExpired()
   const q = query.trim().toLowerCase()

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AiCompanionPanel } from '@/components/ai/AiCompanionPanel'
 import type { AuthMode } from '@/components/auth/AuthPanel'
 import DotField from '@/components/effects/DotField'
@@ -12,7 +12,13 @@ import { NAV_ITEMS, Sidebar } from '@/components/Sidebar'
 import { Button } from '@/components/ui/Button'
 import { MicroLabel } from '@/components/ui/MicroLabel'
 import { Panel } from '@/components/ui/Panel'
-import type { PrivateUser, PublicUser, Tweet } from '@/lib/api'
+import {
+  fetchUnreadNotificationCount,
+  type PrivateUser,
+  type PublicUser,
+  type Tweet,
+} from '@/lib/api'
+import { APP_NAME, APP_VERSION } from '../../shared/constants'
 
 type HomeFeedHandlers = {
   handle: string
@@ -54,9 +60,42 @@ export function MainLayout({
   const [viewingProfile, setViewingProfile] = useState<ProfilePeek | null>(null)
   const [messageTarget, setMessageTarget] = useState<ProfilePeek | null>(null)
   const [companionOpen, setCompanionOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
 
   const isGuest = !profileUser
   const activeLabel = NAV_ITEMS[activeTab] ?? 'Home'
+
+  useEffect(() => {
+    if (!profileUser) {
+      setUnreadCount(0)
+      return
+    }
+
+    let cancelled = false
+
+    async function refreshUnread() {
+      try {
+        const count = await fetchUnreadNotificationCount()
+        if (!cancelled) setUnreadCount(count)
+      } catch {
+        // Keep the last known count on transient failures.
+      }
+    }
+
+    void refreshUnread()
+    const timer = window.setInterval(() => {
+      void refreshUnread()
+    }, 15_000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [profileUser, activeTab])
+
+  const handleNotificationsRead = useCallback(() => {
+    setUnreadCount(0)
+  }, [])
 
   function handlePrimaryAction() {
     if (isGuest) {
@@ -131,7 +170,12 @@ export function MainLayout({
       )
       break
     case 2:
-      content = <NotificationsView onOpenProfile={openProfile} />
+      content = (
+        <NotificationsView
+          onOpenProfile={openProfile}
+          onNotificationsRead={handleNotificationsRead}
+        />
+      )
       break
     case 3:
       content = profileUser ? (
@@ -230,6 +274,7 @@ export function MainLayout({
               onPrimaryAction={handlePrimaryAction}
               onBrandClick={onGoHome}
               handle={isGuest ? null : feed.handle}
+              unreadCount={isGuest ? 0 : unreadCount}
             />
           </div>
         </div>
@@ -246,12 +291,17 @@ export function MainLayout({
               <button
                 type="button"
                 onClick={onGoHome}
-                className="shrink-0 text-[14px] uppercase tracking-[0.12em] text-text-primary transition-colors hover:text-[#ff9142]"
+                className="inline-flex shrink-0 items-baseline text-[14px] uppercase tracking-[0.12em] text-text-primary transition-colors hover:text-[#ff9142]"
                 style={{ borderRadius: 0 }}
-                aria-label="7RANSMI7 home"
+                aria-label={`${APP_NAME} ${APP_VERSION} home`}
               >
                 <span className="bg-[#ff9142] px-1 text-[#1b1b1a]">X</span>
-                <span className="ml-2 hidden sm:inline">7RANSMI7</span>
+                <span className="ml-2 hidden items-baseline gap-1.5 sm:inline-flex">
+                  <span>{APP_NAME}</span>
+                  <span className="shrink-0 text-[10px] tracking-[0.1em] text-[#8a8783]">
+                    {APP_VERSION}
+                  </span>
+                </span>
               </button>
               <div className="min-w-0">
                 <MicroLabel>Active tab</MicroLabel>
@@ -308,6 +358,9 @@ export function MainLayout({
                 style={{ borderRadius: 0 }}
               >
                 {label}
+                {index === 2 && !isGuest && unreadCount > 0
+                  ? ` · ${unreadCount}`
+                  : ''}
               </button>
             ))}
           </div>

@@ -19,6 +19,8 @@ import {
   fetchFollowers,
   fetchFollowing,
   fetchFollowStats,
+  fetchUserLikes,
+  fetchUserReplies,
   fetchUserTweets,
   toggleBlockUser,
   toggleFollowUser,
@@ -114,15 +116,27 @@ export function ProfileView({
   useEffect(() => {
     let cancelled = false
     setTimelineLoading(true)
-    void fetchUserTweets(user.id)
+
+    const load =
+      subTab === 'likes'
+        ? fetchUserLikes(user.id)
+        : subTab === 'replies'
+          ? fetchUserReplies(user.id)
+          : fetchUserTweets(user.id)
+
+    void load
       .then((next) => {
         if (cancelled) return
         setTimeline(next)
       })
       .catch(() => {
         if (cancelled) return
-        // Fall back to the home-feed buffer if the profile endpoint fails.
-        setTimeline(tweets.filter((tweet) => tweet.userId === user.id))
+        if (subTab === 'likes' || subTab === 'replies') {
+          setTimeline([])
+        } else {
+          // Fall back to the home-feed buffer if the profile endpoint fails.
+          setTimeline(tweets.filter((tweet) => tweet.userId === user.id))
+        }
       })
       .finally(() => {
         if (!cancelled) setTimelineLoading(false)
@@ -130,7 +144,7 @@ export function ProfileView({
     return () => {
       cancelled = true
     }
-  }, [user.id, tweets])
+  }, [user.id, subTab, tweets])
 
   useEffect(() => {
     let cancelled = false
@@ -209,10 +223,10 @@ export function ProfileView({
     }
   }
 
-  const filtered = useMemo(
-    () => filterProfileTweets(timeline, user.id, subTab),
-    [timeline, user.id, subTab],
-  )
+  const filtered = useMemo(() => {
+    if (subTab === 'likes' || subTab === 'replies') return timeline
+    return filterProfileTweets(timeline, user.id, subTab)
+  }, [timeline, user.id, subTab])
 
   const initial =
     (user.handle ?? '').replace('@', '').slice(0, 1).toUpperCase() || 'X'
@@ -662,6 +676,11 @@ export function ProfileView({
                     <span className="text-[#ff9142]">
                       {tweet.repostOfHandle ?? 'unknown'}
                     </span>
+                  </p>
+                ) : null}
+                {subTab === 'replies' && tweet.replyToId ? (
+                  <p className="mb-2 text-[11px] uppercase tracking-[0.12em] text-text-muted">
+                    Reply
                   </p>
                 ) : null}
                 <div className="flex items-center justify-between gap-3">

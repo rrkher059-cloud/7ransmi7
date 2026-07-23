@@ -12,6 +12,7 @@ import type { ProfilePeek } from '@/components/feed/TweetCard'
 
 type NotificationsViewProps = {
   onOpenProfile?: (profile: ProfilePeek) => void
+  onNotificationsRead?: () => void
 }
 
 function titleFor(type: AppNotification['type']): string {
@@ -49,7 +50,10 @@ function bodyFor(item: AppNotification): string {
 }
 
 /** Notifications tab — live alert queue from likes, comments, reposts, follows. */
-export function NotificationsView({ onOpenProfile }: NotificationsViewProps) {
+export function NotificationsView({
+  onOpenProfile,
+  onNotificationsRead,
+}: NotificationsViewProps) {
   const [items, setItems] = useState<AppNotification[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -65,7 +69,11 @@ export function NotificationsView({ onOpenProfile }: NotificationsViewProps) {
         setError(null)
         const hasUnread = next.some((item) => !item.read)
         if (hasUnread) {
-          void markNotificationsRead().catch(() => undefined)
+          void markNotificationsRead()
+            .then(() => {
+              if (!cancelled) onNotificationsRead?.()
+            })
+            .catch(() => undefined)
         }
       } catch (err) {
         if (cancelled) return
@@ -87,7 +95,7 @@ export function NotificationsView({ onOpenProfile }: NotificationsViewProps) {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [])
+  }, [onNotificationsRead])
 
   return (
     <Panel label="Notifications // Queue" elevated>

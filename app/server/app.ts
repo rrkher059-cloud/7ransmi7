@@ -57,13 +57,16 @@ import {
   getTrendingTopics,
   likeTweet,
   listLiveTweets,
+  listRepliesByUser,
   listTweetsByUser,
+  listTweetsLikedByUser,
   commentOnTweet,
   reactToTweet,
   repostTweet,
   searchTweets,
 } from './store.ts'
 import {
+  countUnreadNotifications,
   listNotificationsForUser,
   markNotificationsRead,
   pushNotification,
@@ -973,6 +976,28 @@ export function createApp() {
     }
   })
 
+  app.get('/api/users/:id/likes', async (c) => {
+    try {
+      const viewer = await currentUser(c)
+      const tweets = await listTweetsLikedByUser(c.req.param('id'), viewer?.id)
+      return c.json({ tweets })
+    } catch (error) {
+      console.error(error)
+      return c.json(errorBody('STORE_READ_FAILED', 'Failed to load likes.'), 500)
+    }
+  })
+
+  app.get('/api/users/:id/replies', async (c) => {
+    try {
+      const viewer = await currentUser(c)
+      const tweets = await listRepliesByUser(c.req.param('id'), viewer?.id)
+      return c.json({ tweets })
+    } catch (error) {
+      console.error(error)
+      return c.json(errorBody('STORE_READ_FAILED', 'Failed to load replies.'), 500)
+    }
+  })
+
   app.get('/api/users/:id/follow-stats', async (c) => {
     try {
       const viewer = await currentUser(c)
@@ -1084,6 +1109,23 @@ export function createApp() {
       console.error(error)
       return c.json(
         errorBody('NOTIFICATIONS_FAILED', 'Failed to load notifications.'),
+        500,
+      )
+    }
+  })
+
+  app.get('/api/notifications/unread-count', async (c) => {
+    try {
+      const user = await currentUser(c)
+      if (!user) {
+        return c.json(errorBody('UNAUTHORIZED', 'Sign in required.'), 401)
+      }
+      const count = await countUnreadNotifications(user.id)
+      return c.json({ count })
+    } catch (error) {
+      console.error(error)
+      return c.json(
+        errorBody('NOTIFICATIONS_FAILED', 'Failed to load unread count.'),
         500,
       )
     }

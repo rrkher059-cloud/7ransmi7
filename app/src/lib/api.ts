@@ -588,6 +588,18 @@ export async function fetchUserTweets(userId: string): Promise<Tweet[]> {
   return normalizeTweets(data.tweets)
 }
 
+export async function fetchUserLikes(userId: string): Promise<Tweet[]> {
+  const response = await apiFetch(`/api/users/${userId}/likes`)
+  const data = await parseResponse<{ tweets?: Tweet[] }>(response)
+  return normalizeTweets(data.tweets)
+}
+
+export async function fetchUserReplies(userId: string): Promise<Tweet[]> {
+  const response = await apiFetch(`/api/users/${userId}/replies`)
+  const data = await parseResponse<{ tweets?: Tweet[] }>(response)
+  return normalizeTweets(data.tweets)
+}
+
 export type AppNotification = {
   id: string
   recipientId: string
@@ -634,6 +646,12 @@ export async function listNotifications(options?: {
 export async function markNotificationsRead(): Promise<void> {
   const response = await apiFetch('/api/notifications/read', { method: 'POST' })
   await parseResponse<{ ok: boolean }>(response)
+}
+
+export async function fetchUnreadNotificationCount(): Promise<number> {
+  const response = await apiFetch('/api/notifications/unread-count')
+  const data = await parseResponse<{ count?: number }>(response)
+  return asNumber(data.count)
 }
 
 export type PlatformStats = {

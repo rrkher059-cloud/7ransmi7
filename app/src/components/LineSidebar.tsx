@@ -16,6 +16,7 @@ const FALLOFF_CURVES = {
 
 export type LineSidebarProps = {
   items?: string[]
+  unreadCount?: number
   accentColor?: string
   textColor?: string
   markerColor?: string
@@ -53,6 +54,7 @@ const DEFAULT_ITEMS = [
  */
 export default function LineSidebar({
   items = DEFAULT_ITEMS,
+  unreadCount = 0,
   accentColor = '#ff9142',
   textColor = '#c4c4c4',
   markerColor = '#4a4744',
@@ -228,7 +230,18 @@ export default function LineSidebar({
                     {String(index + 1).padStart(2, '0')}
                   </span>
                 ) : null}
-                <span className="line-sidebar__text">{label}</span>
+                <span className="line-sidebar__text">
+                  {label}
+                  {index === 2 && unreadCount > 0 ? (
+                    <span
+                      className="line-sidebar__unread"
+                      style={{ color: accentColor }}
+                    >
+                      {' '}
+                      · {unreadCount}
+                    </span>
+                  ) : null}
+                </span>
               </span>
             </button>
           </li>

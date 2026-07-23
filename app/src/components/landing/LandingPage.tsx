@@ -11,6 +11,7 @@ import {
   fetchPlatformStats,
   type PlatformStats,
 } from '@/lib/api'
+import { APP_NAME, APP_VERSION } from '../../../shared/constants'
 
 type LandingPageProps = {
   onExplore: () => void
@@ -148,10 +149,11 @@ export function LandingPage({ onExplore, onOpenAuth }: LandingPageProps) {
             type="button"
             className="landing-nav-brand-btn"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            aria-label="7RANSMI7 home"
+            aria-label={`${APP_NAME} ${APP_VERSION} home`}
           >
             <span className="landing-nav-mark">X</span>
-            <span className="landing-nav-name">7RANSMI7</span>
+            <span className="landing-nav-name">{APP_NAME}</span>
+            <span className="landing-nav-version">{APP_VERSION}</span>
           </button>
         </div>
         <div className="landing-nav-actions">
@@ -177,7 +179,8 @@ export function LandingPage({ onExplore, onOpenAuth }: LandingPageProps) {
           <div className="landing-hero-copy">
             <p className="landing-brand-lockup landing-reveal">
               <span className="landing-brand-block">X</span>
-              <span className="landing-brand-word">7RANSMI7</span>
+              <span className="landing-brand-word">{APP_NAME}</span>
+              <span className="landing-brand-version">{APP_VERSION}</span>
             </p>
             <h1 className="landing-headline landing-reveal landing-reveal-delay-1">
               Short posts
@@ -243,7 +246,9 @@ export function LandingPage({ onExplore, onOpenAuth }: LandingPageProps) {
         </section>
 
         <footer className="landing-footer">
-          <p className="landing-footer-brand">7RANSMI7 // TIMED CHANNEL</p>
+          <p className="landing-footer-brand">
+            {APP_NAME} {APP_VERSION} // TIMED CHANNEL
+          </p>
           <div className="landing-footer-actions">
             <button
               type="button"

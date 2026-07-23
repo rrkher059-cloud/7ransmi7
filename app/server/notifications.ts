@@ -157,3 +157,10 @@ export async function markNotificationsRead(userId: string): Promise<void> {
     }
   })
 }
+
+export async function countUnreadNotifications(userId: string): Promise<number> {
+  const store = await readStore()
+  return store.notifications.filter(
+    (item) => item.recipientId === userId && !item.read,
+  ).length
+}
