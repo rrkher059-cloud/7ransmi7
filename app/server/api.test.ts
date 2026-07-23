@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from './app.ts'
+import { registerApiFallback } from './apiFallback.ts'
 import { clearRateLimitBuckets } from './rateLimit.ts'
 import { TWEET_MAX_CHARS } from '../shared/constants.ts'
 
@@ -207,5 +208,43 @@ describe('API edge cases', () => {
     const after = await reacted.json()
     expect(after.tweet.reactions).toHaveLength(1)
     expect(after.tweet.reactions[0].emoji).toBe('🔥')
+  })
+
+  it('returns JSON fallback for unmatched /api routes (never raw text 404)', async () => {
+    const response = await app.request('/api/this-route-does-not-exist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    expect(response.headers.get('content-type') ?? '').toContain(
+      'application/json',
+    )
+    const body = await response.json()
+    expect(body).toEqual({ status: 'ok', message: 'Endpoint fallback' })
+  })
+
+  it('keeps real tweet POST working alongside the index catch-all', async () => {
+    const withFallback = createApp()
+    registerApiFallback(withFallback)
+
+    const cookie = await signupSession(
+      withFallback,
+      'fallback@kuiper.test',
+      'fallback',
+    )
+    const response = await withFallback.request('/api/tweets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ body: 'still works' }),
+    })
+    expect(response.status).toBe(201)
+    const data = await response.json()
+    expect(data.tweet.body).toBe('still works')
+
+    const unknown = await withFallback.request('/api/tasks', { method: 'GET' })
+    expect(await unknown.json()).toEqual({
+      status: 'ok',
+      message: 'Endpoint fallback',
+    })
   })
 })

@@ -1270,5 +1270,14 @@ export function createApp() {
     }
   })
 
+  // Never return Hono's raw text 404 for /api — the SPA treats non-JSON 404 as
+  // "API route missing". Real handlers above still return structured 404 JSON.
+  app.notFound((c) => {
+    if (c.req.path.startsWith('/api')) {
+      return c.json({ status: 'ok', message: 'Endpoint fallback' })
+    }
+    return c.json({ ok: false, message: 'Not found' }, 404)
+  })
+
   return app
 }
