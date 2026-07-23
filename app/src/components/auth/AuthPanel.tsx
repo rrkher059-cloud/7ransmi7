@@ -145,7 +145,7 @@ export function AuthPanel({
             />
           </div>
           <Button type="submit" variant="accent" disabled={busy}>
-            {busy ? 'Creating' : 'Create account'}
+            {busy ? 'Continuing' : 'Continue'}
           </Button>
         </form>
       ) : null}
