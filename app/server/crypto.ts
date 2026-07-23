@@ -1,4 +1,4 @@
-import { randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto'
+import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
 
 const scryptAsync = promisify(scrypt)
@@ -26,15 +26,3 @@ export async function verifySecret(
 /** Fixed-format dummy hash so missing-user auth still runs scrypt. */
 export const DUMMY_PASSWORD_HASH =
   '0123456789abcdef0123456789abcdef:' + '00'.repeat(KEY_LEN)
-
-export function generateOtpCode(length: number): string {
-  // AUTH_TEST_OTP is honored only under NODE_ENV=test (never in production).
-  if (process.env.NODE_ENV === 'test') {
-    const fixed = process.env.AUTH_TEST_OTP
-    if (fixed && /^\d+$/.test(fixed)) {
-      return fixed.padStart(length, '0').slice(-length)
-    }
-  }
-  const max = 10 ** length
-  return String(randomInt(0, max)).padStart(length, '0')
-}

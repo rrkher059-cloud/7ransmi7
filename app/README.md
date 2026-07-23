@@ -23,7 +23,6 @@ See `.env.example`. Important:
 | `VITE_API_BASE_URL` | Frontend API origin (no trailing slash). |
 | `ALLOWED_ORIGINS` | Comma-separated CORS / CSRF allowlist. |
 | `TRUST_PROXY` | Set when behind a trusted reverse proxy (or rely on `RENDER`). |
-| `RESEND_API_KEY` | Optional; without it, OTP codes log to the API console (non-production only). |
 | `OPENROUTER_API_KEY` | Optional; enables AI assist / companion / semantic search. |
 
 ## Architecture
@@ -31,17 +30,17 @@ See `.env.example`. Important:
 ```
 app/
   src/       React client (Vite)
-  server/    Hono API + JSON stores (tweets, users, otps, follows, messages, notifications, blocks)
+  server/    Hono API + JSON stores (tweets, users, follows, messages, notifications, blocks)
   shared/    Zod schemas + constants shared by client and server
   data/      Runtime JSON files (gitignored except .gitkeep)
 ```
 
-Auth: email OTP + password, `httpOnly` signed session cookie. Mutating browser requests are origin/referer-checked when those headers are present.
+Auth: email + password signup/login with an immediate `httpOnly` signed session cookie (no email verification). Mutating browser requests are origin/referer-checked when those headers are present.
 
 ## Deploy
 
 - **Client:** GitHub Pages (static Vite build). Point `VITE_API_BASE_URL` at the API.
-- **API:** Render (or similar Node host). Set `SESSION_SECRET`, `ALLOWED_ORIGINS`, and optional Resend/OpenRouter keys. Enable `TRUST_PROXY` / rely on `RENDER` for rate-limit IP headers.
+- **API:** Render (or similar Node host). Set `SESSION_SECRET`, `ALLOWED_ORIGINS`, and optional OpenRouter keys. Enable `TRUST_PROXY` / rely on `RENDER` for rate-limit IP headers.
 
 ## Security notes
 

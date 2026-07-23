@@ -5,14 +5,11 @@ import { cors } from 'hono/cors'
 import { bodyLimit } from 'hono/body-limit'
 import { secureHeaders } from 'hono/secure-headers'
 import { ZodError, z } from 'zod'
-import { OTP_LENGTH } from '../shared/constants.ts'
 import {
   createTweetSchema,
   commentTweetSchema,
   likeTweetSchema,
   loginSchema,
-  forgotPasswordSchema,
-  resetPasswordSchema,
   reactTweetSchema,
   sendMessageSchema,
   signupSchema,
@@ -32,7 +29,6 @@ import {
   semanticSearchTweets,
 } from './ai.ts'
 import { enforceRateLimit } from './rateLimit.ts'
-import { generateOtpCode } from './crypto.ts'
 import { toggleBlock } from './blocks.ts'
 import {
   getFollowStats,
@@ -40,14 +36,12 @@ import {
   listFollowing,
   toggleFollow,
 } from './follows.ts'
-import { sendVerificationEmail } from './mailer.ts'
 import {
   getThread,
   listConversations,
   sendMessage,
 } from './messages.ts'
 import { getPlatformStats } from './stats.ts'
-import { consumeOtp, upsertOtp } from './otps.ts'
 import {
   SESSION_COOKIE,
   sessionCookieClearOptions,
@@ -77,11 +71,9 @@ import {
 import {
   authenticateUser,
   createUser,
-  findUserByEmail,
   getPrivateUser,
   listPublicUsers,
   searchUsers,
-  updatePassword,
 } from './users.ts'
 
 type AppVariables = {
@@ -384,115 +376,6 @@ export function createApp() {
   app.post('/api/auth/logout', (c) => {
     deleteCookie(c, SESSION_COOKIE, sessionCookieClearOptions)
     return c.json({ ok: true })
-  })
-
-  app.post('/api/auth/forgot-password', async (c) => {
-    try {
-      const ipLimited = enforceRateLimit(
-        c,
-        `auth:forgot-password:ip:${clientKey(c)}`,
-        5,
-        60 * 60_000,
-        errorBody,
-      )
-      if (ipLimited) return ipLimited
-
-      const json = await c.req.json()
-      const { email } = forgotPasswordSchema.parse(json)
-
-      const emailLimited = enforceRateLimit(
-        c,
-        `auth:forgot-password:email:${email}`,
-        3,
-        60 * 60_000,
-        errorBody,
-      )
-      if (emailLimited) return emailLimited
-
-      const existing = await findUserByEmail(email)
-      // Always return the same success shape — do not reveal whether email exists.
-      if (existing) {
-        const code = generateOtpCode(OTP_LENGTH)
-        await upsertOtp(email, code)
-        await sendVerificationEmail(email, code)
-      }
-
-      return c.json({ ok: true, message: 'Verification code sent.' })
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return c.json(
-          errorBody('VALIDATION_ERROR', 'Invalid email.', error.flatten()),
-          400,
-        )
-      }
-      if (error instanceof SyntaxError) {
-        return c.json(errorBody('INVALID_JSON', 'Request body must be JSON.'), 400)
-      }
-      console.error(error)
-      return c.json(
-        errorBody('MAIL_FAILED', 'Failed to send verification code.'),
-        500,
-      )
-    }
-  })
-
-  app.post('/api/auth/reset-password', async (c) => {
-    try {
-      const ipLimited = enforceRateLimit(
-        c,
-        `auth:reset-password:ip:${clientKey(c)}`,
-        10,
-        60 * 60_000,
-        errorBody,
-      )
-      if (ipLimited) return ipLimited
-
-      const json = await c.req.json()
-      const payload = resetPasswordSchema.parse(json)
-
-      const emailLimited = enforceRateLimit(
-        c,
-        `auth:reset-password:email:${payload.email}`,
-        5,
-        60 * 60_000,
-        errorBody,
-      )
-      if (emailLimited) return emailLimited
-
-      const otpResult = await consumeOtp(payload.email, payload.code)
-      if (!otpResult.ok) {
-        return c.json(errorBody('OTP_INVALID', otpResult.reason), 400)
-      }
-
-      const user = await updatePassword(payload.email, payload.password)
-      if (!user) {
-        return c.json(
-          errorBody('OTP_INVALID', 'Invalid or expired verification code.'),
-          400,
-        )
-      }
-
-      return c.json({ ok: true, message: 'Password updated.' })
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return c.json(
-          errorBody(
-            'VALIDATION_ERROR',
-            'Invalid reset payload.',
-            error.flatten(),
-          ),
-          400,
-        )
-      }
-      if (error instanceof SyntaxError) {
-        return c.json(errorBody('INVALID_JSON', 'Request body must be JSON.'), 400)
-      }
-      console.error(error)
-      return c.json(
-        errorBody('RESET_FAILED', 'Failed to reset password.'),
-        500,
-      )
-    }
   })
 
   app.get('/api/auth/me', async (c) => {

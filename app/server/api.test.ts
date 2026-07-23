@@ -11,10 +11,7 @@ async function withTempStores() {
   const dir = await mkdtemp(path.join(tmpdir(), 'transmit-api-'))
   process.env.TWEET_STORE_PATH = path.join(dir, 'tweets.json')
   process.env.USERS_STORE_PATH = path.join(dir, 'users.json')
-  process.env.OTPS_STORE_PATH = path.join(dir, 'otps.json')
   process.env.SESSION_SECRET = 'test-session-secret-32chars!!'
-  process.env.AUTH_TEST_OTP = '123456'
-  delete process.env.RESEND_API_KEY
   return dir
 }
 
@@ -58,8 +55,6 @@ describe('API edge cases', () => {
   afterEach(async () => {
     delete process.env.TWEET_STORE_PATH
     delete process.env.USERS_STORE_PATH
-    delete process.env.OTPS_STORE_PATH
-    delete process.env.AUTH_TEST_OTP
     await rm(tempDir, { recursive: true, force: true })
   })
 

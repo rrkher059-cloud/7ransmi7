@@ -176,28 +176,6 @@ export async function getMe(): Promise<PrivateUser | null> {
   return normalizePrivateUser(data.user)
 }
 
-export async function forgotPassword(email: string): Promise<void> {
-  const response = await apiFetch('/api/auth/forgot-password', {
-    method: 'POST',
-    headers: jsonHeaders,
-    body: JSON.stringify({ email }),
-  })
-  await parseResponse<{ ok: boolean }>(response)
-}
-
-export async function resetPassword(input: {
-  email: string
-  code: string
-  password: string
-}): Promise<void> {
-  const response = await apiFetch('/api/auth/reset-password', {
-    method: 'POST',
-    headers: jsonHeaders,
-    body: JSON.stringify(input),
-  })
-  await parseResponse<{ ok: boolean }>(response)
-}
-
 export async function signup(input: {
   email: string
   password: string

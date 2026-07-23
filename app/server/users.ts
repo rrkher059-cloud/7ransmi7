@@ -122,27 +122,6 @@ export async function authenticateUser(
   return toPrivate(user)
 }
 
-export async function updatePassword(
-  email: string,
-  password: string,
-): Promise<PrivateUser | null> {
-  const passwordHash = await hashSecret(password)
-  return mutateJsonFile(usersPath(), emptyStore(), parseStore, (store) => {
-    const normalized = email.toLowerCase()
-    const index = store.users.findIndex((user) => user.email === normalized)
-    if (index < 0) {
-      return { store, result: null, dirty: false }
-    }
-    const current = store.users[index]
-    const updated: UserRecord = { ...current, passwordHash }
-    const users = store.users.map((user, i) => (i === index ? updated : user))
-    return {
-      store: { users },
-      result: toPrivate(updated),
-    }
-  })
-}
-
 export async function getPublicUser(id: string): Promise<PublicUser | null> {
   const user = await findUserById(id)
   return user ? toPublic(user) : null

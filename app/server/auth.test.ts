@@ -4,20 +4,13 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from './app.ts'
 import { clearRateLimitBuckets } from './rateLimit.ts'
-import {
-  forgotPasswordSchema,
-  loginSchema,
-  signupSchema,
-} from '../shared/schemas.ts'
+import { loginSchema, signupSchema } from '../shared/schemas.ts'
 
 async function withTempStores() {
   const dir = await mkdtemp(path.join(tmpdir(), 'transmit-auth-'))
   process.env.TWEET_STORE_PATH = path.join(dir, 'tweets.json')
   process.env.USERS_STORE_PATH = path.join(dir, 'users.json')
-  process.env.OTPS_STORE_PATH = path.join(dir, 'otps.json')
   process.env.SESSION_SECRET = 'test-session-secret-32chars!!'
-  process.env.AUTH_TEST_OTP = '123456'
-  delete process.env.RESEND_API_KEY
   return dir
 }
 
@@ -31,9 +24,13 @@ function cookieFrom(response: Response): string {
 }
 
 describe('auth schemas', () => {
-  it('rejects invalid email', () => {
+  it('rejects invalid email on signup', () => {
     expect(
-      forgotPasswordSchema.safeParse({ email: 'not-an-email' }).success,
+      signupSchema.safeParse({
+        email: 'not-an-email',
+        password: 'securepass',
+        handle: 'ops',
+      }).success,
     ).toBe(false)
   })
 
@@ -66,8 +63,6 @@ describe('auth API', () => {
   afterEach(async () => {
     delete process.env.TWEET_STORE_PATH
     delete process.env.USERS_STORE_PATH
-    delete process.env.OTPS_STORE_PATH
-    delete process.env.AUTH_TEST_OTP
     await rm(tempDir, { recursive: true, force: true })
   })
 

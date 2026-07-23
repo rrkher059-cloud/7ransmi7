@@ -12,13 +12,6 @@ import { purgeExpired } from './store.ts'
 
 assertSessionSecretConfigured()
 
-if (
-  process.env.AUTH_TEST_OTP &&
-  (process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER))
-) {
-  throw new Error('AUTH_TEST_OTP must not be set in production.')
-}
-
 void cleanupStaleTempFiles(DEFAULT_DATA_DIR).catch((error) => {
   console.error('cleanupStaleTempFiles failed', error)
 })
@@ -31,8 +24,6 @@ void cleanupStaleTempFiles(DEFAULT_DATA_DIR).catch((error) => {
  * | GET    | /api/health                       |
  * | GET    | /api/stats                        |
  * | GET    | /api/auth/me                      |
- * | POST   | /api/auth/forgot-password         |
- * | POST   | /api/auth/reset-password          |
  * | POST   | /api/auth/signup                  |
  * | POST   | /api/auth/login                   |
  * | POST   | /api/auth/logout                  |

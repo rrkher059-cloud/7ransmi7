@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import {
-  OTP_LENGTH,
   PASSWORD_MIN_LENGTH,
   TWEET_IMAGE_MAX_CHARS,
   TWEET_MAX_CHARS,
@@ -53,13 +52,6 @@ const passwordSchema = z
     message: 'Choose a less common password.',
   })
 
-const otpCodeSchema = z
-  .string()
-  .trim()
-  .regex(new RegExp(`^\\d{${OTP_LENGTH}}$`), {
-    message: `Code must be ${OTP_LENGTH} digits.`,
-  })
-
 const ALLOWED_IMAGE_MIMES = new Set([
   'image/png',
   'image/jpeg',
@@ -77,17 +69,6 @@ export const signupSchema = z.object({
 export const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, { message: 'Password is required.' }),
-})
-
-/** Used for password reset OTP. */
-export const forgotPasswordSchema = z.object({
-  email: emailSchema,
-})
-
-export const resetPasswordSchema = z.object({
-  email: emailSchema,
-  code: otpCodeSchema,
-  password: passwordSchema,
 })
 
 /** Client sends body and optional image / reply target. */
@@ -282,21 +263,8 @@ export const userStoreSchema = z.object({
   users: z.array(userRecordSchema),
 })
 
-export const otpRecordSchema = z.object({
-  email: emailSchema,
-  codeHash: z.string().min(1),
-  expiresAt: z.string().datetime(),
-  attempts: z.number().int().nonnegative(),
-})
-
-export const otpStoreSchema = z.object({
-  otps: z.array(otpRecordSchema),
-})
-
 export type SignupInput = z.infer<typeof signupSchema>
 export type LoginInput = z.infer<typeof loginSchema>
-export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>
-export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>
 export type CreateTweetInput = z.infer<typeof createTweetSchema>
 export type CommentTweetInput = z.infer<typeof commentTweetSchema>
 export type LikeTweetInput = z.infer<typeof likeTweetSchema>
@@ -312,8 +280,6 @@ export type PublicUser = z.infer<typeof publicUserSchema>
 export type PrivateUser = z.infer<typeof privateUserSchema>
 export type UserRecord = z.infer<typeof userRecordSchema>
 export type UserStore = z.infer<typeof userStoreSchema>
-export type OtpRecord = z.infer<typeof otpRecordSchema>
-export type OtpStore = z.infer<typeof otpStoreSchema>
 
 export type ApiErrorBody = {
   error: {
