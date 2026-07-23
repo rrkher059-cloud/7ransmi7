@@ -6,14 +6,12 @@ import {
   ApiClientError,
   forgotPassword,
   login,
-  requestCode,
   resetPassword,
   signup,
   type PrivateUser,
 } from '@/lib/api'
 
 export type AuthMode = 'login' | 'signup' | 'reset'
-type SignupStep = 'email' | 'verify'
 type ResetStep = 'email' | 'verify'
 
 type AuthPanelProps = {
@@ -33,7 +31,6 @@ export function AuthPanel({
   const [mode, setMode] = useState<AuthMode>(
     initialMode === 'reset' ? 'reset' : initialMode,
   )
-  const [signupStep, setSignupStep] = useState<SignupStep>('email')
   const [resetStep, setResetStep] = useState<ResetStep>('email')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
@@ -45,7 +42,6 @@ export function AuthPanel({
 
   useEffect(() => {
     setMode(initialMode === 'reset' ? 'reset' : initialMode)
-    setSignupStep('email')
     setResetStep('email')
     setError(null)
     setInfo(null)
@@ -55,7 +51,6 @@ export function AuthPanel({
 
   function switchMode(next: AuthMode) {
     setMode(next)
-    setSignupStep('email')
     setResetStep('email')
     setError(null)
     setInfo(null)
@@ -63,30 +58,12 @@ export function AuthPanel({
     setPassword('')
   }
 
-  async function handleRequestCode(event: FormEvent) {
-    event.preventDefault()
-    setBusy(true)
-    setError(null)
-    setInfo(null)
-    try {
-      await requestCode(email)
-      setSignupStep('verify')
-      setInfo('Code sent. Check your email (or API console in local mode).')
-    } catch (err) {
-      setError(
-        err instanceof ApiClientError ? err.message : 'Failed to send code.',
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function handleSignup(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      const user = await signup({ email, code, password, handle })
+      const user = await signup({ email, password, handle })
       onAuthenticated(user)
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : 'Signup failed.')
@@ -181,8 +158,8 @@ export function AuthPanel({
         </div>
       ) : null}
 
-      {mode === 'signup' && signupStep === 'email' ? (
-        <form className="flex flex-col gap-4" onSubmit={handleRequestCode}>
+      {mode === 'signup' ? (
+        <form className="flex flex-col gap-4" onSubmit={handleSignup}>
           <div className="flex flex-col gap-2">
             <MicroLabel>Email</MicroLabel>
             <input
@@ -194,44 +171,6 @@ export function AuthPanel({
               placeholder="ops@kuiper.alpha"
               disabled={busy}
               autoComplete="email"
-            />
-          </div>
-          <Button
-            type="submit"
-            variant="accent"
-            disabled={busy || !email.trim()}
-          >
-            {busy ? 'Sending' : 'Send code'}
-          </Button>
-        </form>
-      ) : null}
-
-      {mode === 'signup' && signupStep === 'verify' ? (
-        <form className="flex flex-col gap-4" onSubmit={handleSignup}>
-          <div className="flex flex-col gap-2">
-            <MicroLabel>Email</MicroLabel>
-            <input
-              type="email"
-              value={email}
-              readOnly
-              className={`${fieldClass} opacity-70`}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <MicroLabel>Verification code</MicroLabel>
-            <input
-              inputMode="numeric"
-              pattern="\d{6}"
-              maxLength={6}
-              required
-              value={code}
-              onChange={(e) =>
-                setCode(e.target.value.replace(/\D/g, '').slice(0, 6))
-              }
-              className={fieldClass}
-              placeholder="000000"
-              disabled={busy}
-              autoComplete="one-time-code"
             />
           </div>
           <div className="flex flex-col gap-2">
@@ -261,23 +200,9 @@ export function AuthPanel({
               autoComplete="new-password"
             />
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" variant="accent" disabled={busy}>
-              {busy ? 'Creating' : 'Create account'}
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              disabled={busy}
-              onClick={() => {
-                setSignupStep('email')
-                setCode('')
-                setInfo(null)
-              }}
-            >
-              Back
-            </Button>
-          </div>
+          <Button type="submit" variant="accent" disabled={busy}>
+            {busy ? 'Creating' : 'Create account'}
+          </Button>
         </form>
       ) : null}
 

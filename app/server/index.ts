@@ -31,7 +31,6 @@ void cleanupStaleTempFiles(DEFAULT_DATA_DIR).catch((error) => {
  * | GET    | /api/health                       |
  * | GET    | /api/stats                        |
  * | GET    | /api/auth/me                      |
- * | POST   | /api/auth/request-code            |
  * | POST   | /api/auth/forgot-password         |
  * | POST   | /api/auth/reset-password          |
  * | POST   | /api/auth/signup                  |

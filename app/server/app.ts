@@ -14,7 +14,6 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   reactTweetSchema,
-  requestCodeSchema,
   sendMessageSchema,
   signupSchema,
   aiAssistSchema,
@@ -287,58 +286,6 @@ export function createApp() {
     }
   })
 
-  app.post('/api/auth/request-code', async (c) => {
-    try {
-      const ipLimited = enforceRateLimit(
-        c,
-        `auth:request-code:ip:${clientKey(c)}`,
-        5,
-        60 * 60_000,
-        errorBody,
-      )
-      if (ipLimited) return ipLimited
-
-      const json = await c.req.json()
-      const { email } = requestCodeSchema.parse(json)
-
-      const emailLimited = enforceRateLimit(
-        c,
-        `auth:request-code:email:${email}`,
-        3,
-        60 * 60_000,
-        errorBody,
-      )
-      if (emailLimited) return emailLimited
-
-      const existing = await findUserByEmail(email)
-      // Always return the same success shape — do not reveal whether email is taken.
-      if (existing) {
-        return c.json({ ok: true, message: 'Verification code sent.' })
-      }
-
-      const code = generateOtpCode(OTP_LENGTH)
-      await upsertOtp(email, code)
-      await sendVerificationEmail(email, code)
-
-      return c.json({ ok: true, message: 'Verification code sent.' })
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return c.json(
-          errorBody('VALIDATION_ERROR', 'Invalid email.', error.flatten()),
-          400,
-        )
-      }
-      if (error instanceof SyntaxError) {
-        return c.json(errorBody('INVALID_JSON', 'Request body must be JSON.'), 400)
-      }
-      console.error(error)
-      return c.json(
-        errorBody('MAIL_FAILED', 'Failed to send verification code.'),
-        500,
-      )
-    }
-  })
-
   app.post('/api/auth/signup', async (c) => {
     try {
       const ipLimited = enforceRateLimit(
@@ -352,11 +299,6 @@ export function createApp() {
 
       const json = await c.req.json()
       const payload = signupSchema.parse(json)
-
-      const otpResult = await consumeOtp(payload.email, payload.code)
-      if (!otpResult.ok) {
-        return c.json(errorBody('OTP_INVALID', otpResult.reason), 400)
-      }
 
       const user = await createUser({
         email: payload.email,

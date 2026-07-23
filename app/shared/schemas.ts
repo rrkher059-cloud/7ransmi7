@@ -68,13 +68,8 @@ const ALLOWED_IMAGE_MIMES = new Set([
   'image/webp',
 ])
 
-export const requestCodeSchema = z.object({
-  email: emailSchema,
-})
-
 export const signupSchema = z.object({
   email: emailSchema,
-  code: otpCodeSchema,
   password: passwordSchema,
   handle: handleSchema,
 })
@@ -84,7 +79,7 @@ export const loginSchema = z.object({
   password: z.string().min(1, { message: 'Password is required.' }),
 })
 
-/** Same shape as request-code — used for password reset OTP. */
+/** Used for password reset OTP. */
 export const forgotPasswordSchema = z.object({
   email: emailSchema,
 })
@@ -298,7 +293,6 @@ export const otpStoreSchema = z.object({
   otps: z.array(otpRecordSchema),
 })
 
-export type RequestCodeInput = z.infer<typeof requestCodeSchema>
 export type SignupInput = z.infer<typeof signupSchema>
 export type LoginInput = z.infer<typeof loginSchema>
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>

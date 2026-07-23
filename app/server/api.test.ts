@@ -32,18 +32,11 @@ async function signupSession(
   email = 'ops@kuiper.test',
   handle = 'ops',
 ) {
-  await app.request('/api/auth/request-code', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
-  })
-
   const signup = await app.request('/api/auth/signup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email,
-      code: '123456',
       password: 'securepass',
       handle,
     }),

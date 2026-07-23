@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from './app.ts'
 import { clearRateLimitBuckets } from './rateLimit.ts'
 import {
+  forgotPasswordSchema,
   loginSchema,
-  requestCodeSchema,
   signupSchema,
 } from '../shared/schemas.ts'
 
@@ -32,17 +32,16 @@ function cookieFrom(response: Response): string {
 
 describe('auth schemas', () => {
   it('rejects invalid email', () => {
-    expect(requestCodeSchema.safeParse({ email: 'not-an-email' }).success).toBe(
-      false,
-    )
+    expect(
+      forgotPasswordSchema.safeParse({ email: 'not-an-email' }).success,
+    ).toBe(false)
   })
 
-  it('rejects empty OTP', () => {
+  it('rejects short password on signup', () => {
     expect(
       signupSchema.safeParse({
         email: 'a@b.co',
-        code: '',
-        password: 'securepass',
+        password: 'short',
         handle: 'ops',
       }).success,
     ).toBe(false)
@@ -72,60 +71,29 @@ describe('auth API', () => {
     await rm(tempDir, { recursive: true, force: true })
   })
 
-  it('rejects signup without a prior code', async () => {
+  it('rejects signup with invalid payload', async () => {
     const response = await app.request('/api/auth/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: 'lone@kuiper.test',
-        code: '123456',
+        email: 'not-an-email',
         password: 'securepass',
         handle: 'lone',
       }),
     })
     expect(response.status).toBe(400)
     const body = await response.json()
-    expect(body.error.code).toBe('OTP_INVALID')
+    expect(body.error.code).toBe('VALIDATION_ERROR')
   })
 
-  it('rejects wrong OTP', async () => {
-    await app.request('/api/auth/request-code', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'wrong@kuiper.test' }),
-    })
-
-    const response = await app.request('/api/auth/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: 'wrong@kuiper.test',
-        code: '000000',
-        password: 'securepass',
-        handle: 'wrong',
-      }),
-    })
-    expect(response.status).toBe(400)
-    const body = await response.json()
-    expect(body.error.code).toBe('OTP_INVALID')
-  })
-
-  it('signs up with valid OTP then logs in again', async () => {
+  it('signs up directly then logs in again', async () => {
     const email = 'pilot@kuiper.test'
-
-    const codeRes = await app.request('/api/auth/request-code', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    })
-    expect(codeRes.status).toBe(200)
 
     const signup = await app.request('/api/auth/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email,
-        code: '123456',
         password: 'securepass',
         handle: 'pilot',
       }),
@@ -162,32 +130,30 @@ describe('auth API', () => {
     expect(loggedIn.user.handle).toBe('@pilot')
   })
 
-  it('rejects duplicate email on request-code after signup without revealing', async () => {
+  it('rejects duplicate email on signup', async () => {
     const email = 'dup@kuiper.test'
-    await app.request('/api/auth/request-code', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    })
-    await app.request('/api/auth/signup', {
+    const first = await app.request('/api/auth/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email,
-        code: '123456',
         password: 'securepass',
         handle: 'dup',
       }),
     })
+    expect(first.status).toBe(201)
 
-    const again = await app.request('/api/auth/request-code', {
+    const again = await app.request('/api/auth/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({
+        email,
+        password: 'securepass',
+        handle: 'dup2',
+      }),
     })
-    expect(again.status).toBe(200)
+    expect(again.status).toBe(409)
     const body = await again.json()
-    expect(body.ok).toBe(true)
-    expect(body.error).toBeUndefined()
+    expect(body.error.code).toBe('EMAIL_TAKEN')
   })
 })

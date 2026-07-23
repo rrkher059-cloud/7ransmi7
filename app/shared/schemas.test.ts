@@ -87,7 +87,6 @@ describe('user schemas', () => {
   it('rejects common passwords on signup', () => {
     const result = signupSchema.safeParse({
       email: 'a@b.co',
-      code: '123456',
       password: 'password',
       handle: 'ops',
     })
