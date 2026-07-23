@@ -1,11 +1,11 @@
-import type { Hono } from 'hono'
+import type { Env, Hono } from 'hono'
 
 /**
  * Catch-all for unmatched `/api/*` paths.
  * Returns clean JSON so the SPA never treats raw Hono text 404 as
  * "API route missing". Specific routes registered earlier still win.
  */
-export function registerApiFallback(api: Hono): void {
+export function registerApiFallback<E extends Env>(api: Hono<E>): void {
   api.all('/api/*', (c) =>
     c.json({ status: 'ok', message: 'Endpoint fallback' }),
   )

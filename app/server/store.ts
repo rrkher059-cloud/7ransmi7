@@ -201,7 +201,7 @@ function normalizeTrendingTag(raw: string): string | null {
     .trim()
     .toLowerCase()
     .replace(/^#/, '')
-    .replace(/[^a-z0-9_\-]/g, '')
+    .replace(/[^a-z0-9_-]/g, '')
     .slice(0, 32)
   return cleaned ? `#${cleaned}` : null
 }
