@@ -8,7 +8,7 @@ import {
   signup,
   type PrivateUser,
 } from '@/lib/api'
-import { PASSWORD_MIN_LENGTH } from '../../shared/constants'
+import { PASSWORD_MIN_LENGTH } from '../../../shared/constants'
 
 export type AuthMode = 'login' | 'signup'
 
